@@ -179,6 +179,6 @@ function draw() {
   let fps = frameRate();
   fill(200, 100, 0);
   text("fps: " + parseInt(fps), width - 45, 20);
-  text("ver: 0.2 \nApril 14th 2024", 10, height - 40);
+  text("ver: 0.3 \nApril 14th 2024", 10, height - 40);
   // noLoop();
 }

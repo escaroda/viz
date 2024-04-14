@@ -30,7 +30,7 @@ class Laser {
     
                     const distance = p5.Vector.dist(ray.pos, pt);
                     // console.log('distance', distance);
-                    if (distance < 1) { // TODO: Why this even happens?
+                    if (distance < 0.01) { // TODO: Why this even happens?
                         continue;
                     }
 
