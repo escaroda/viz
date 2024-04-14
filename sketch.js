@@ -146,7 +146,9 @@ function draw() {
   text('right laser', 40, laserCheckbox2.y + 14);
   text('normal vectors', 40, normalVectorsCheckbox.y + 14);
 
-  const starWidth = Math.max(innerRadiusSlider1.value(), outerRadiusSlider1.value());
+  // fill(255, 100, 0, 255);
+
+  const starWidth = Math.max(innerRadiusSlider1.value(), outerRadiusSlider1.value(), innerRadiusSlider2.value(), outerRadiusSlider2.value());
 
   laser1 = new Laser(createVector(width / 2 - starWidth - 50, height / 2), radians(0), attenuationSlider.value());
   laser2 = new Laser(createVector(width / 2 + starWidth + 50, height / 2), radians(180), attenuationSlider.value());
