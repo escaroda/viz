@@ -18,7 +18,8 @@ let innerRadiusSlider2;
 let outerRadiusSlider2;
 let speedSlider2;
 let phaseSlider2;
-let secondLaserCheckbox;
+let laserCheckbox1;
+let laserCheckbox2;
 let normalVectorsCheckbox;
 
 function star(x, y, radius1, radius2, npoints, speed, phase, color) {
@@ -110,8 +111,11 @@ function setup() {
   phaseSlider2.size(sliderSize);
   phaseSlider2.class('slider');
 
-  secondLaserCheckbox = createCheckbox("", true);
-  secondLaserCheckbox.position(10, y += yShift);
+  laserCheckbox1 = createCheckbox("", true);
+  laserCheckbox1.position(10, y += yShift);
+
+  laserCheckbox2 = createCheckbox("", true);
+  laserCheckbox2.position(10, y += yShift);
 
   normalVectorsCheckbox = createCheckbox("", false);
   normalVectorsCheckbox.position(10, y += yShift);
@@ -138,7 +142,8 @@ function draw() {
   text('phase: ' + phaseSlider2.value(), phaseSlider2.x * 2 + phaseSlider2.width, phaseSlider2.y + 14);
 
   fill(230);
-  text('second laser', 40, secondLaserCheckbox.y + 14);
+  text('left laser', 40, laserCheckbox1.y + 14);
+  text('right laser', 40, laserCheckbox2.y + 14);
   text('normal vectors', 40, normalVectorsCheckbox.y + 14);
 
   const starWidth = Math.max(innerRadiusSlider1.value(), outerRadiusSlider1.value());
@@ -148,14 +153,17 @@ function draw() {
   walls1 = star(width * 0.5, height * 0.5, innerRadiusSlider1.value(), outerRadiusSlider1.value(), segmentsSlider1.value(), speedSlider1.value(), radians(phaseSlider1.value()), wallColor1);
   walls2 = star(width * 0.5, height * 0.5, innerRadiusSlider2.value(), outerRadiusSlider2.value(), segmentsSlider2.value(), speedSlider2.value(), radians(phaseSlider2.value()), wallColor2);
 
+  
   for (const wall1 of walls1) {
     wall1.show();
   }
 
-  laser1.show();
-  laser1.look(walls1);
+  if (laserCheckbox1.checked()) {
+    laser1.show();
+    laser1.look(walls1);
+  }
   
-  if (secondLaserCheckbox.checked()) {
+  if (laserCheckbox2.checked()) {
     for (const wall2 of walls2) {
       wall2.show();
     }
