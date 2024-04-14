@@ -2,6 +2,8 @@ const backgroundValue = 10;
 
 let walls1 = [];
 let walls2 = [];
+const wallColor1 = [50, 150, 250, 230];
+const wallColor2 = [200, 90, 250, 250];
 let laser1;
 let laser2;
 
@@ -121,18 +123,21 @@ function draw() {
   fill(230);
   text('attenuation: ' + attenuationSlider.value(), attenuationSlider.x * 2 + attenuationSlider.width, attenuationSlider.y + 14);
 
+  fill(...wallColor1);
   text('segments: ' + segmentsSlider1.value(), segmentsSlider1.x * 2 + segmentsSlider1.width, segmentsSlider1.y + 14);
   text('inner radius: ' + innerRadiusSlider1.value(), innerRadiusSlider1.x * 2 + innerRadiusSlider1.width, innerRadiusSlider1.y + 14);
   text('outer radius: ' + outerRadiusSlider1.value(), outerRadiusSlider1.x * 2 + outerRadiusSlider1.width, outerRadiusSlider1.y + 14);
   text('speed: ' + parseInt(speedSlider1.value() * 10000), speedSlider1.x * 2 + speedSlider1.width, speedSlider1.y + 14);
   text('phase: ' + phaseSlider1.value(), phaseSlider1.x * 2 + phaseSlider1.width, phaseSlider1.y + 14);
 
+  fill(...wallColor2);
   text('segments: ' + segmentsSlider2.value(), segmentsSlider2.x * 2 + segmentsSlider2.width, segmentsSlider2.y + 14);
   text('inner radius: ' + innerRadiusSlider2.value(), innerRadiusSlider2.x * 2 + innerRadiusSlider2.width, innerRadiusSlider2.y + 14);
   text('outer radius: ' + outerRadiusSlider2.value(), outerRadiusSlider2.x * 2 + outerRadiusSlider2.width, outerRadiusSlider2.y + 14);
   text('speed: ' + parseInt(speedSlider2.value() * 10000), speedSlider2.x * 2 + speedSlider2.width, speedSlider2.y + 14);
   text('phase: ' + phaseSlider2.value(), phaseSlider2.x * 2 + phaseSlider2.width, phaseSlider2.y + 14);
 
+  fill(230);
   text('second laser', 40, secondLaserCheckbox.y + 14);
   text('normal vectors', 40, normalVectorsCheckbox.y + 14);
 
@@ -140,8 +145,8 @@ function draw() {
 
   laser1 = new Laser(createVector(width / 2 - starWidth - 50, height / 2), radians(0), attenuationSlider.value());
   laser2 = new Laser(createVector(width / 2 + starWidth + 50, height / 2), radians(180), attenuationSlider.value());
-  walls1 = star(width * 0.5, height * 0.5, innerRadiusSlider1.value(), outerRadiusSlider1.value(), segmentsSlider1.value(), speedSlider1.value(), radians(phaseSlider1.value()), [50, 90, 250, 220]);
-  walls2 = star(width * 0.5, height * 0.5, innerRadiusSlider2.value(), outerRadiusSlider2.value(), segmentsSlider2.value(), speedSlider2.value(), radians(phaseSlider2.value()), [200, 90, 230, 220]);
+  walls1 = star(width * 0.5, height * 0.5, innerRadiusSlider1.value(), outerRadiusSlider1.value(), segmentsSlider1.value(), speedSlider1.value(), radians(phaseSlider1.value()), wallColor1);
+  walls2 = star(width * 0.5, height * 0.5, innerRadiusSlider2.value(), outerRadiusSlider2.value(), segmentsSlider2.value(), speedSlider2.value(), radians(phaseSlider2.value()), wallColor2);
 
   for (const wall1 of walls1) {
     wall1.show();
