@@ -1,8 +1,9 @@
 class Ray {
-    constructor(pos, angle, alpha = 255) {
+    constructor(pos, angle, alpha = 255, passThrough = false) {
         this.pos = pos;
         this.dir = p5.Vector.fromAngle(angle);
         this.alpha = alpha;
+        this.passThrough = passThrough;
     }
     
     show() {
