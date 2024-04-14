@@ -12,3 +12,9 @@ main {
   height:100%;
   width: 100%;
 }
+
+.slider {
+  outline: none; /* Remove outline */
+  opacity: 0.7;
+  transition: opacity .2s;
+}

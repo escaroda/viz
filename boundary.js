@@ -1,8 +1,9 @@
 class Boundary {
-    constructor(x1, y1, x2, y2) {
+    constructor(x1, y1, x2, y2, color) {
         this.a = createVector(x1, y1);
         this.b = createVector(x2, y2);
         this.c = createVector((x1 + x2) / 2, (y1 + y2) / 2); // center
+        this.color = color;
 
         const dx = x2 - x1;
         const dy = y2 - y1;
@@ -15,7 +16,7 @@ class Boundary {
     }
 
     show() {
-        stroke(50, 90, 250, 160);
+        stroke(...this.color);
         line(this.a.x, this.a.y, this.b.x, this.b.y);
 
         // Draw Normals

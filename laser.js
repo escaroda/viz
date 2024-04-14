@@ -39,7 +39,7 @@ class Laser {
             }
             
             if (closest && i * this.attenuation < 255) {
-                stroke(255, 50, 100, 255 - i * this.attenuation);
+                stroke(255, 50, 50, 255 - i * this.attenuation);
                 line(ray.pos.x, ray.pos.y, closest.x, closest.y);
                 ray = new Ray(closest, nextDir.heading(), 255 - i * 30);
             } else {
