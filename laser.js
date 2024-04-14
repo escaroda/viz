@@ -54,6 +54,7 @@ class Laser {
             
             if (collision && i * this.attenuation < 255) {
                 stroke(255, 50, 50, 255 - i * this.attenuation);
+                strokeWeight(laserWeightSlider.value());
                 line(ray.pos.x, ray.pos.y, collision.x, collision.y);
                 ray = new Ray(collision, nextDir.heading(), 255 - i * 30);
             } else {

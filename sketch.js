@@ -8,19 +8,31 @@ let laser1;
 let laser2;
 
 let attenuationSlider;
+
 let segmentsSlider1;
 let innerRadiusSlider1;
 let outerRadiusSlider1;
 let speedSlider1;
 let phaseSlider1;
+
 let segmentsSlider2;
 let innerRadiusSlider2;
 let outerRadiusSlider2;
 let speedSlider2;
 let phaseSlider2;
+
+let wallWeightSlider;
+let laserWeightSlider;
+
 let laserCheckbox1;
 let laserCheckbox2;
 let normalVectorsCheckbox;
+let grayscaleWalls;
+
+
+function getGrayscale(r, g, b) {
+  return [(0.2126 * r) + (0.7152 * g) + (0.0722 * b)];
+}
 
 function star(x, y, radius1, radius2, npoints, speed, phase, color) {
   const walls = [];
@@ -60,6 +72,16 @@ function setup() {
   attenuationSlider.position(10, y += yShift);
   attenuationSlider.size(sliderSize);
   attenuationSlider.class('slider');
+
+  wallWeightSlider = createSlider(1, 5, 1, 0.1);
+  wallWeightSlider.position(10, y += yShift);
+  wallWeightSlider.size(sliderSize);
+  wallWeightSlider.class('slider');
+
+  laserWeightSlider = createSlider(1, 5, 2, 0.1);
+  laserWeightSlider.position(10, y += yShift);
+  laserWeightSlider.size(sliderSize);
+  laserWeightSlider.class('slider');
 
   segmentsSlider1 = createSlider(2, 50, 20, 1);
   segmentsSlider1.position(10, y += yShift);
@@ -119,13 +141,19 @@ function setup() {
 
   normalVectorsCheckbox = createCheckbox("", false);
   normalVectorsCheckbox.position(10, y += yShift);
+
+  grayscaleWallsCheckbox = createCheckbox("", true);
+  grayscaleWallsCheckbox.position(10, y += yShift);
 }
 
 function draw() {
   background(backgroundValue);
  
   fill(230);
+  noStroke();
   text('attenuation: ' + attenuationSlider.value(), attenuationSlider.x * 2 + attenuationSlider.width, attenuationSlider.y + 14);
+  text('wall weight: ' + wallWeightSlider.value(), wallWeightSlider.x * 2 + wallWeightSlider.width, wallWeightSlider.y + 14);
+  text('laser weight: ' + laserWeightSlider.value(), laserWeightSlider.x * 2 + laserWeightSlider.width, laserWeightSlider.y + 14);
 
   fill(...wallColor1);
   text('segments: ' + segmentsSlider1.value(), segmentsSlider1.x * 2 + segmentsSlider1.width, segmentsSlider1.y + 14);
@@ -145,15 +173,19 @@ function draw() {
   text('left laser', 40, laserCheckbox1.y + 14);
   text('right laser', 40, laserCheckbox2.y + 14);
   text('normal vectors', 40, normalVectorsCheckbox.y + 14);
+  text('grayscale walls', 40, grayscaleWallsCheckbox.y + 14);
 
-  // fill(255, 100, 0, 255);
+  fill(255, 100, 0, 255);
+  
 
   const starWidth = Math.max(innerRadiusSlider1.value(), outerRadiusSlider1.value(), innerRadiusSlider2.value(), outerRadiusSlider2.value());
+  const wallColorSelected1 = grayscaleWallsCheckbox.checked() ? getGrayscale(...wallColor1) : wallColor1;
+  const wallColorSelected2 = grayscaleWallsCheckbox.checked() ? getGrayscale(...wallColor2) : wallColor2;
 
   laser1 = new Laser(createVector(width / 2 - starWidth - 50, height / 2), radians(0), attenuationSlider.value());
   laser2 = new Laser(createVector(width / 2 + starWidth + 50, height / 2), radians(180), attenuationSlider.value());
-  walls1 = star(width * 0.5, height * 0.5, innerRadiusSlider1.value(), outerRadiusSlider1.value(), segmentsSlider1.value(), speedSlider1.value(), radians(phaseSlider1.value()), wallColor1);
-  walls2 = star(width * 0.5, height * 0.5, innerRadiusSlider2.value(), outerRadiusSlider2.value(), segmentsSlider2.value(), speedSlider2.value(), radians(phaseSlider2.value()), wallColor2);
+  walls1 = star(width * 0.5, height * 0.5, innerRadiusSlider1.value(), outerRadiusSlider1.value(), segmentsSlider1.value(), speedSlider1.value(), radians(phaseSlider1.value()), wallColorSelected1);
+  walls2 = star(width * 0.5, height * 0.5, innerRadiusSlider2.value(), outerRadiusSlider2.value(), segmentsSlider2.value(), speedSlider2.value(), radians(phaseSlider2.value()), wallColorSelected2);
 
   
   for (const wall1 of walls1) {
@@ -178,7 +210,8 @@ function draw() {
 
   let fps = frameRate();
   fill(200, 100, 0);
+  noStroke();
   text("fps: " + parseInt(fps), width - 45, 20);
-  text("ver: 0.3 \nApril 14th 2024", 10, height - 40);
+  text("ver: 0.4 \nApril 14th 2024", 10, height - 40);
   // noLoop();
 }
