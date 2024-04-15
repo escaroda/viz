@@ -61,6 +61,17 @@ function star(x, y, radius1, radius2, npoints, speed, phase, color) {
   return walls;
 }
 
+function onSliderChange(e) {
+  console.log(e);
+
+  if ('URLSearchParams' in window) {
+    var searchParams = new URLSearchParams(window.location.search)
+    searchParams.set(e.target.id, e.target.value);
+    var newRelativePathQuery = window.location.pathname + '?' + searchParams.toString();
+    history.pushState(null, '', newRelativePathQuery);
+  }
+}
+
 function setup() {
   createCanvas(1024, 840);
 
@@ -68,81 +79,110 @@ function setup() {
   let y = -10;
   let yShift = 20;
 
-  attenuationSlider = createSlider(10, 70, 30, 1);
+  const urlSearchParams = new URLSearchParams(window.location.search);
+  const params = Object.fromEntries(urlSearchParams.entries());
+
+  attenuationSlider = createSlider(10, 70, params.attenuation ? Number(params.attenuation) : 30, 1);
   attenuationSlider.position(10, y += yShift);
   attenuationSlider.size(sliderSize);
   attenuationSlider.class('slider');
+  attenuationSlider.id('attenuation');
+  attenuationSlider.elt.addEventListener("change", onSliderChange);
 
-  wallWeightSlider = createSlider(1, 5, 1, 0.1);
+  wallWeightSlider = createSlider(1, 5, params.wall_weight ? Number(params.wall_weight) : 1, 0.1);
   wallWeightSlider.position(10, y += yShift);
   wallWeightSlider.size(sliderSize);
   wallWeightSlider.class('slider');
+  wallWeightSlider.id('wall_weight');
+  wallWeightSlider.elt.addEventListener("change", onSliderChange);
 
-  laserWeightSlider = createSlider(1, 5, 2, 0.1);
+  laserWeightSlider = createSlider(1, 5, params.laser_weight ? Number(params.laser_weight) : 2, 0.1);
   laserWeightSlider.position(10, y += yShift);
   laserWeightSlider.size(sliderSize);
   laserWeightSlider.class('slider');
+  laserWeightSlider.id('laser_weight');
+  laserWeightSlider.elt.addEventListener("change", onSliderChange);
 
-  segmentsSlider1 = createSlider(2, 50, 20, 1);
+  segmentsSlider1 = createSlider(2, 50, params.segments_1 ? Number(params.segments_1) : 20, 1);
   segmentsSlider1.position(10, y += yShift);
   segmentsSlider1.size(sliderSize);
   segmentsSlider1.class('slider');
+  segmentsSlider1.id('segments_1');
+  segmentsSlider1.elt.addEventListener("change", onSliderChange);
 
-  innerRadiusSlider1 = createSlider(100, 300, 197, 1);
+  innerRadiusSlider1 = createSlider(100, 300, params.inner_1 ? Number(params.inner_1) : 197, 1);
   innerRadiusSlider1.position(10, y += yShift);
   innerRadiusSlider1.size(sliderSize);
   innerRadiusSlider1.class('slider');
+  innerRadiusSlider1.id('inner_1');
+  innerRadiusSlider1.elt.addEventListener("change", onSliderChange);
 
-  outerRadiusSlider1 = createSlider(100, 300, 200, 1);
+  outerRadiusSlider1 = createSlider(100, 300, params.outer_1 ? Number(params.outer_1) : 200, 1);
   outerRadiusSlider1.position(10, y += yShift);
   outerRadiusSlider1.size(sliderSize);
   outerRadiusSlider1.class('slider');
+  outerRadiusSlider1.id('outer_1');
+  outerRadiusSlider1.elt.addEventListener("change", onSliderChange);
 
-  speedSlider1 = createSlider(-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001);
+  speedSlider1 = createSlider(-1 / 400.0, 1 / 400.0, params.speed_1 ? Number(params.speed_1) : 1 / 1600.0, 0.0001);
   speedSlider1.position(10, y += yShift);
   speedSlider1.size(sliderSize);
   speedSlider1.class('slider');
+  speedSlider1.id('speed_1');
+  speedSlider1.elt.addEventListener("change", onSliderChange);
 
-  phaseSlider1 = createSlider(-46, 46, 0, 0.1);
+  phaseSlider1 = createSlider(-46, 46, params.phase_1 ? Number(params.phase_1) : 0, 0.1);
   phaseSlider1.position(10, y += yShift);
   phaseSlider1.size(sliderSize);
   phaseSlider1.class('slider');
+  phaseSlider1.id('phase_1');
+  phaseSlider1.elt.addEventListener("change", onSliderChange);
 
-  segmentsSlider2 = createSlider(2, 50, 20, 1);
+  segmentsSlider2 = createSlider(2, 50, params.segments_2 ? Number(params.segments_2) : 20, 1);
   segmentsSlider2.position(10, y += yShift);
   segmentsSlider2.size(sliderSize);
   segmentsSlider2.class('slider');
+  segmentsSlider2.id('segments_2');
+  segmentsSlider2.elt.addEventListener("change", onSliderChange);
 
-  innerRadiusSlider2 = createSlider(100, 300, 197, 1);
+  innerRadiusSlider2 = createSlider(100, 300, params.inner_2 ? Number(params.inner_2) : 197, 1);
   innerRadiusSlider2.position(10, y += yShift);
   innerRadiusSlider2.size(sliderSize);
   innerRadiusSlider2.class('slider');
+  innerRadiusSlider2.id('inner_2');
+  innerRadiusSlider2.elt.addEventListener("change", onSliderChange);
 
-  outerRadiusSlider2 = createSlider(100, 300, 200, 1);
+  outerRadiusSlider2 = createSlider(100, 300, params.outer_2 ? Number(params.outer_2) : 200, 1);
   outerRadiusSlider2.position(10, y += yShift);
   outerRadiusSlider2.size(sliderSize);
   outerRadiusSlider2.class('slider');
+  outerRadiusSlider2.id('outer_2');
+  outerRadiusSlider2.elt.addEventListener("change", onSliderChange);
 
-  speedSlider2 = createSlider(-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001);
+  speedSlider2 = createSlider(-1 / 400.0, 1 / 400.0, params.speed_2 ? Number(params.speed_2) : 1 / 1600.0, 0.0001);
   speedSlider2.position(10, y += yShift);
   speedSlider2.size(sliderSize);
   speedSlider2.class('slider');
+  speedSlider2.id('speed_2');
+  speedSlider2.elt.addEventListener("change", onSliderChange);
 
-  phaseSlider2 = createSlider(-46, 46, 0, 0.1);
+  phaseSlider2 = createSlider(-46, 46, params.phase_2 ? Number(params.phase_2) : 0, 0.1);
   phaseSlider2.position(10, y += yShift);
   phaseSlider2.size(sliderSize);
   phaseSlider2.class('slider');
+  phaseSlider2.id('phase_2');
+  phaseSlider2.elt.addEventListener("change", onSliderChange);
 
-  laserCheckbox1 = createCheckbox("", true);
+  laserCheckbox1 = createCheckbox("", params.laser_1 ? !!Number(params.laser_1) : true);
   laserCheckbox1.position(10, y += yShift);
 
-  laserCheckbox2 = createCheckbox("", true);
+  laserCheckbox2 = createCheckbox("", params.laser_2 ? !!Number(params.laser_2) : true);
   laserCheckbox2.position(10, y += yShift);
 
-  normalVectorsCheckbox = createCheckbox("", false);
+  normalVectorsCheckbox = createCheckbox("", params.normals ? !!Number(params.normals) : false);
   normalVectorsCheckbox.position(10, y += yShift);
 
-  grayscaleWallsCheckbox = createCheckbox("", true);
+  grayscaleWallsCheckbox = createCheckbox("", params.grayscale ? !!Number(params.grayscale) : true);
   grayscaleWallsCheckbox.position(10, y += yShift);
 }
 
@@ -212,6 +252,6 @@ function draw() {
   fill(200, 100, 0);
   noStroke();
   text("fps: " + parseInt(fps), width - 45, 20);
-  text("ver: 0.4 \nApril 14th 2024", 10, height - 40);
+  text("ver: 0.5 \nApril 15th 2024", 10, height - 40);
   // noLoop();
 }
