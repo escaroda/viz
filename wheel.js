@@ -13,12 +13,12 @@ class Wheel {
         let halfAngle = angle / 2.0;
         const shiftAngle = frameCount * speed;
       
-        for (let a = shiftAngle + phase; a < TWO_PI + shiftAngle + phase; a += angle) {
-          let x1 = x + cos(a) * radius2;
-          let y1 = y + sin(a) * radius2;
+        for (let a = 0; a < TWO_PI; a += angle) {
+          let x1 = x + cos(a + shiftAngle + phase) * radius2;
+          let y1 = y + sin(a + shiftAngle + phase) * radius2;
           points.push([x1, y1]);
-          let x2 = x + cos(a + halfAngle) * radius1;
-          let y2 = y + sin(a + halfAngle) * radius1;
+          let x2 = x + cos(a + halfAngle + shiftAngle + phase) * radius1;
+          let y2 = y + sin(a + halfAngle + shiftAngle + phase) * radius1;
           points.push([x2, y2]);
         }
       
@@ -39,10 +39,10 @@ class Wheel {
       
         const shiftAngle = frameCount * speed;
       
-        for (let a = shiftAngle + phase; a < TWO_PI + shiftAngle + phase; a += angle) {
+        for (let a = 0; a < TWO_PI; a += angle) {
           const c = map(sin(a * npoints), -1, 1, radius1, radius2);
-          let x1 = x + cos(a + shiftAngle) * c;
-          let y1 = y + sin(a + shiftAngle) * c;
+          let x1 = x + cos(a + shiftAngle + phase) * c;
+          let y1 = y + sin(a + shiftAngle + phase) * c;
           points.push([x1, y1]);
           // let x2 = x + cos(a + halfAngle) * radius1;
           // let y2 = y + sin(a + halfAngle) * radius1;

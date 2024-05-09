@@ -18,7 +18,7 @@ const params = Object.fromEntries(urlSearchParams.entries());
 const sliders = {
   "attenuation": {config: [10, 70, 60, 1], name: "attenuation", color: defaultColor},
   "wall_weight": {config: [0, 5, 0.4, 0.1], name: "wall weight", color: defaultColor},
-  "laser_weight": {config: [1, 5, 2, 0.1], name: "laser weight", color: defaultColor},
+  "laser_weight": {config: [0, 5, 2, 0.1], name: "laser weight", color: defaultColor},
   "laser_height_1": {config: [-200, 200, 0, 0.1], name: "left laser height", color: defaultColor},
   "laser_angle_1": {config: [-90, 90, 0, 0.01], name: "left laser angle", color: defaultColor},
   "laser_height_2": {config: [-200, 200, 0, 0.1], name: "right laser height", color: defaultColor},
@@ -170,8 +170,8 @@ function draw() {
   const wheel1 = new Wheel(selectors["wheel_type_1"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_1"].instance.value(), sliders["outer_1"].instance.value(), sliders["segments_1"].instance.value(), sliders["speed_1"].instance.value(), radians(sliders["phase_1"].instance.value()), wallColorSelected1);
   const wheel2 = new Wheel(selectors["wheel_type_2"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_2"].instance.value(), sliders["outer_2"].instance.value(), sliders["segments_2"].instance.value(), sliders["speed_2"].instance.value(), radians(sliders["phase_2"].instance.value()), wallColorSelected2);
   
-  wheel1.forEach(w => w.show());
   if (checkboxes["laser_1"].instance.checked()) {
+    wheel1.forEach(w => w.show());
     laser1.show();
     laser1.look(wheel1);
   }
