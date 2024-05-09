@@ -1,14 +1,15 @@
 class Ray {
     constructor(pos, angle, alpha = 255, passThrough = false) {
         this.pos = pos;
-        this.dir = p5.Vector.fromAngle(angle);
+        this.angle = angle;
+        this.dir = p5.Vector.fromAngle(this.angle);
         this.alpha = alpha;
         this.passThrough = passThrough;
     }
     
     show() {
-        stroke(255, 0, 0, this.alpha);
-        line(this.pos.x, this.pos.y,this.pos.x + this.dir.x * 10,  this.pos.y + this.dir.y * 10);
+        // stroke(255, 0, 0, this.alpha);
+        // line(this.pos.x, this.pos.y,this.pos.x + this.dir.x * 10,  this.pos.y + this.dir.y * 10);
     }
 
     cast(wall) {

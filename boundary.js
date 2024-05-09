@@ -17,13 +17,14 @@ class Boundary {
 
     show() {
         stroke(...this.color);
-        strokeWeight(wallWeightSlider.value());
+        strokeWeight(sliders["wall_weight"].instance.value());
 
         line(this.a.x, this.a.y, this.b.x, this.b.y);
 
         // Draw Normals
-        if (normalVectorsCheckbox.checked()) {
+        if (checkboxes["normals"].instance.checked()) {
             stroke(50, 255, 100, 100);
+            strokeWeight(1);
             line(this.c.x, this.c.y, this.c.x + this.n.x, this.c.y + this.n.y);
         }
     }
