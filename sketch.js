@@ -16,56 +16,66 @@ const params = Object.fromEntries(urlSearchParams.entries());
 // console.log(params);
 
 const sliders = {
-  "attenuation": {config: [10, 70, 60, 1], name: "attenuation", color: defaultColor},
-  "wall_weight": {config: [0, 5, 0.4, 0.1], name: "wall weight", color: defaultColor},
-  "laser_weight": {config: [0, 5, 2, 0.1], name: "laser weight", color: defaultColor},
-  "laser_height_1": {config: [-200, 200, 0, 0.1], name: "left laser height", color: defaultColor},
-  "laser_angle_1": {config: [-90, 90, 0, 0.01], name: "left laser angle", color: defaultColor},
-  "laser_height_2": {config: [-200, 200, 0, 0.1], name: "right laser height", color: defaultColor},
-  "laser_angle_2": {config: [-90, 90, 0, 0.01], name: "right laser angle", color: defaultColor},
-  
+  "attenuation": { config: [10, 70, 60, 1], name: "attenuation", color: defaultColor },
+  "wall_weight": { config: [0, 5, 0.4, 0.1], name: "wall weight", color: defaultColor },
+  "laser_weight": { config: [0, 5, 2, 0.1], name: "laser weight", color: defaultColor },
+  "laser_height_1": { config: [-200, 200, 0, 0.1], name: "left laser height", color: defaultColor },
+  "laser_angle_1": { config: [-90, 90, 0, 0.01], name: "left laser angle", color: defaultColor },
+  "laser_height_2": { config: [-200, 200, 0, 0.1], name: "right laser height", color: defaultColor },
+  "laser_angle_2": { config: [-90, 90, 0, 0.01], name: "right laser angle", color: defaultColor },
+
   // 1st wheel
-  "segments_1": {config: [2, 50, 20, 1], name: "segments", color: wallColor1},
-  "inner_1": {config: [100, 300, 197, 1], name: "inner radius", color: wallColor1},
-  "outer_1": {config: [100, 300, 200, 1], name: "outer radius", color: wallColor1},
-  "speed_1": {config: [-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001], name: "speed", color: wallColor1, format: speedFormat},
-  "phase_1": {config: [-46, 46, 0, 0.1], name: "phase", color: wallColor1},
+  "segments_1": { config: [2, 50, 20, 1], name: "segments", color: wallColor1 },
+  "inner_1": { config: [100, 300, 197, 1], name: "inner radius", color: wallColor1 },
+  "outer_1": { config: [100, 300, 200, 1], name: "outer radius", color: wallColor1 },
+  "speed_1": { config: [-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001], name: "speed", color: wallColor1, format: speedFormat },
+  "phase_1": { config: [-46, 46, 0, 0.1], name: "phase", color: wallColor1 },
+  "ratio_1": { config: [0, 1, 0.5, 0.01], name: "ratio", color: wallColor1 },
 
   // 2nd wheel
-  "segments_2": {config: [2, 50, 20, 1], name: "segments", color: wallColor2},
-  "inner_2": {config: [100, 300, 197, 1], name: "inner radius", color: wallColor2},
-  "outer_2": {config: [100, 300, 200, 1], name: "outer radius", color: wallColor2},
-  "speed_2": {config: [-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001], name: "speed", color: wallColor2, format: speedFormat},
-  "phase_2": {config: [-46, 46, 0, 0.1], name: "phase", color: wallColor2},
+  "segments_2": { config: [2, 50, 20, 1], name: "segments", color: wallColor2 },
+  "inner_2": { config: [100, 300, 197, 1], name: "inner radius", color: wallColor2 },
+  "outer_2": { config: [100, 300, 200, 1], name: "outer radius", color: wallColor2 },
+  "speed_2": { config: [-1 / 400.0, 1 / 400.0, 1 / 1600.0, 0.0001], name: "speed", color: wallColor2, format: speedFormat },
+  "phase_2": { config: [-46, 46, 0, 0.1], name: "phase", color: wallColor2 },
+  "ratio_2": { config: [0, 1, 0.5, 0.01], name: "ratio", color: wallColor2 },
 };
 
 const checkboxes = {
-  "laser_1": {config: {isChecked: true}, color: defaultColor, name: "left laser"},
-  "laser_2": {config: {isChecked: true}, color: defaultColor, name: "right laser"},
-  "normals": {config: {isChecked: false}, color: defaultColor, name: "normal vectors"},
-  "grayscale": {config: {isChecked: true}, color: defaultColor, name: "grayscale walls"},
+  "laser_1": { config: { isChecked: true }, color: defaultColor, name: "left laser" },
+  "laser_2": { config: { isChecked: true }, color: defaultColor, name: "right laser" },
+  "normals": { config: { isChecked: false }, color: defaultColor, name: "normal vectors" },
+  "grayscale": { config: { isChecked: true }, color: defaultColor, name: "grayscale walls" },
 };
 
 const colorPickers = {
-  "laser_color_1": {color: defaultLaserColor, posShift: [-50, 0], name: "left laser color"},
-  "laser_color_2": {color: defaultLaserColor, posShift: [50, 0], name: "right laser color"},
+  "laser_color_1": { color: defaultLaserColor, posShift: [-50, 0], name: "left laser color" },
+  "laser_color_2": { color: defaultLaserColor, posShift: [50, 0], name: "right laser color" },
 };
 
 const selectors = {
-  "wheel_type_1": {options: wheelTypes, selected: wheelTypes[0]},
-  "wheel_type_2": {options: wheelTypes, selected: wheelTypes[0]},
+  "wheel_type_1": { options: wheelTypes, selected: wheelTypes[0] },
+  "wheel_type_2": { options: wheelTypes, selected: wheelTypes[0] },
 };
 
 function getGrayscale(r, g, b) {
   return [(0.2126 * r) + (0.7152 * g) + (0.0722 * b)];
 }
 
-function onInputChange(e) {
+function setSearchParams(key, value) {
   if ("URLSearchParams" in window) {
     var searchParams = new URLSearchParams(window.location.search)
-    searchParams.set(e.target.id, e.target.value);
+    searchParams.set(key, value);
     var newRelativePathQuery = window.location.pathname + "?" + searchParams.toString();
     history.pushState(null, "", newRelativePathQuery);
+  }
+}
+
+function onInputChange({ target }) {
+  if (target.type === "checkbox" && target.offsetParent.id) {
+    setSearchParams(target.offsetParent.id, Number(target.checked)); 
+  } else {
+    setSearchParams(target.id, target.value);
   }
 }
 
@@ -94,6 +104,8 @@ function setup() {
     }
     const instance = createCheckbox("", checkbox.config.isChecked);
     instance.position(10, y += SLIDER_DISTANCE_BETWEEN);
+    instance.elt.id = id;
+    instance.elt.addEventListener("change", onInputChange);
     checkbox.instance = instance;
   }
 
@@ -149,7 +161,7 @@ function draw() {
     fill(...color);
     text(name, 40, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
   }
- 
+
   const starWidth = Math.max(
     sliders["inner_1"].instance.value(),
     sliders["outer_1"].instance.value(),
@@ -167,15 +179,15 @@ function draw() {
 
   const laser1 = new Laser(createVector(width / 2 - starWidth - 50, height / 2 - sliders["laser_height_1"].instance.value()), radians(sliders["laser_angle_1"].instance.value()), sliders["attenuation"].instance.value(), colorPickers["laser_color_1"].instance.color().levels);
   const laser2 = new Laser(createVector(width / 2 + starWidth + 50, height / 2 - sliders["laser_height_2"].instance.value()), radians(180 + sliders["laser_angle_2"].instance.value()), sliders["attenuation"].instance.value(), colorPickers["laser_color_2"].instance.color().levels);
-  const wheel1 = new Wheel(selectors["wheel_type_1"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_1"].instance.value(), sliders["outer_1"].instance.value(), sliders["segments_1"].instance.value(), sliders["speed_1"].instance.value(), radians(sliders["phase_1"].instance.value()), wallColorSelected1);
-  const wheel2 = new Wheel(selectors["wheel_type_2"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_2"].instance.value(), sliders["outer_2"].instance.value(), sliders["segments_2"].instance.value(), sliders["speed_2"].instance.value(), radians(sliders["phase_2"].instance.value()), wallColorSelected2);
-  
+  const wheel1 = new Wheel(selectors["wheel_type_1"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_1"].instance.value(), sliders["outer_1"].instance.value(), sliders["segments_1"].instance.value(), sliders["ratio_1"].instance.value(), sliders["speed_1"].instance.value(), radians(sliders["phase_1"].instance.value()), wallColorSelected1);
+  const wheel2 = new Wheel(selectors["wheel_type_2"].instance.selected(), width * 0.5, height * 0.5, sliders["inner_2"].instance.value(), sliders["outer_2"].instance.value(), sliders["segments_2"].instance.value(), sliders["ratio_2"].instance.value(), sliders["speed_2"].instance.value(), radians(sliders["phase_2"].instance.value()), wallColorSelected2);
+
   if (checkboxes["laser_1"].instance.checked()) {
     wheel1.forEach(w => w.show());
     laser1.show();
     laser1.look(wheel1);
   }
-  
+
   if (checkboxes["laser_2"].instance.checked()) {
     wheel2.forEach(w => w.show());
     laser2.show();
@@ -187,6 +199,6 @@ function draw() {
   fill(200, 100, 0);
   noStroke();
   text("fps: " + parseInt(fps), width - 45, 20);
-  text("ver: 0.7 \nMat 9th 2024", 10, height - 40);
+  text("ver: 0.8 \nMay 13th 2024", 10, height - 40);
   // noLoop();
 }
