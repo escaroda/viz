@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Circle Wave</title>
+    <style>
+        body{ background-color: ivory; }
+        #canvas{ border:1px solid red; margin:0 auto; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width=800 height=800></canvas>
+    <script>
+        var canvas=document.getElementById("canvas");
+        var ctx=canvas.getContext("2d");
+
+        var cx = 400;
+        var cy = 400;
+        var radius = 300;
+        var amp = 4;
+        var sineCount = 20;
+
+        ctx.beginPath();
+        for(var i=0;i<360;i++){
+            var angle=i*Math.PI/180;
+            var pt=sineCircleXYatAngle(cx,cy,radius,amp,angle,sineCount);
+            ctx.lineTo(pt.x,pt.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        function sineCircleXYatAngle(cx,cy,radius,amplitude,angle,sineCount){
+            var x = cx+(radius+amplitude*Math.sin(sineCount*angle))*Math.cos(angle);
+            var y = cy+(radius+amplitude*Math.sin(sineCount*angle))*Math.sin(angle);
+            return({x:x,y:y});
+        }
+    </script>
+</body>
+</html>
