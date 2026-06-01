@@ -28,7 +28,6 @@
 // Wheel zooms, drag empty space pans, double-click resets. Reuses Boundary and
 // Ray from the front-view app.
 
-const BACKGROUND_COLOR = 26;
 const SLIDER_SIZE = 180;
 const SLIDER_DISTANCE_BETWEEN = 30;
 const SLIDER_TEXT_DISTANCE_BETWEEN = 14;
@@ -39,12 +38,34 @@ const MARGIN = 90;  // px of empty space kept around the cavity (room to drag th
 const HANDLE_R = 7; // laser-source handle radius (px)
 const NUDGE = 0.1;  // cm the arrow keys move the source
 
+// Theme palettes. applyTheme() MUTATES the colour arrays below in place, so the
+// values baked into the slider/checkbox config (which hold the same array refs)
+// re-theme automatically. BACKGROUND_COLOR is a plain number (reassigned).
+const PALETTES = {
+  dark:  { bg: 26,  text: [225],          dim: [120, 120, 130], laser: [255, 70, 70],  overlap: [255, 180, 40], mirrorA: [90, 170, 255], mirrorB: [205, 120, 255] },
+  light: { bg: 236, text: [40],           dim: [95, 95, 105],   laser: [205, 35, 35],  overlap: [200, 120, 0],  mirrorA: [20, 95, 200],  mirrorB: [140, 45, 200] },
+};
+let theme = "dark";
+let BACKGROUND_COLOR = 26;
 const defaultColor = [225];
 const laserColor = [255, 70, 70];
-const overlapColor = [255, 180, 40]; // spots that would overlap
+const overlapColor = [255, 180, 40]; // spots that would overlap / degrade
 const mirrorColorA = [90, 170, 255];  // left mirror
 const mirrorColorB = [205, 120, 255]; // right mirror
 const dimColor = [120, 120, 130];
+
+function applyTheme() {
+  const p = PALETTES[theme] || PALETTES.dark;
+  const set = (arr, vals) => { arr.length = 0; arr.push(...vals); };
+  BACKGROUND_COLOR = p.bg;
+  set(defaultColor, p.text); set(dimColor, p.dim); set(laserColor, p.laser);
+  set(overlapColor, p.overlap); set(mirrorColorA, p.mirrorA); set(mirrorColorB, p.mirrorB);
+  if (document.body) {
+    document.body.style.background = `rgb(${p.bg},${p.bg},${p.bg})`;
+    document.documentElement.style.background = `rgb(${p.bg},${p.bg},${p.bg})`;
+    document.body.classList.toggle("light", theme === "light");
+  }
+}
 
 // Plot region (to the right of the controls).
 const PLOT = { left: 520, right: 1245, top: 110, bottom: 760 };
@@ -77,6 +98,7 @@ let srcScreen = { x: -100, y: -100 };
 // Slider step mode: fine by default (precision); hold Shift for coarse/fast.
 let fineMode = true;
 let numInputsY = 0; // y of the exact-value inputs row (set in setup, read by draw)
+let snap = null;    // latest geometry/params published by draw() for PDF export
 
 const sliders = {
   "diameter":      { config: [200, 320, 300, 1],   fine: 0.1,  unit: " cm",  name: "ring diameter D (mirror gap)", color: mirrorColorA },
@@ -84,7 +106,7 @@ const sliders = {
   "angle":         { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
   "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments",                color: dimColor, format: (v) => v + " (flat mirrors)" },
   "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, unit: " cm",  name: "beam diameter",                color: laserColor },
-  "beam_spread":   { config: [0, 3, 0.15, 0.01],    fine: 0.005, name: "beam spread (mirror imperfection)", color: laserColor, format: (v) => v.toFixed(3) + " mrad/bounce" },
+  "beam_spread":   { config: [0, 3, 0, 0.01],       fine: 0.005, name: "beam spread (mirror imperfection)", color: laserColor, format: (v) => v.toFixed(3) + " mrad/bounce" },
   "falloff":       { config: [0, 0.9, 0.2, 0.01],   fine: 0.005, name: "falloff (dim per reflection)",  color: laserColor, format: (v) => (v * 100).toFixed(0) + "% / bounce" },
   "beam_weight":   { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam line weight",             color: defaultColor },
 };
@@ -94,6 +116,7 @@ const checkboxes = {
   "beam_width":   { config: { isChecked: true },  color: defaultColor, name: "show beam width (to scale)" },
   "show_estimate":{ config: { isChecked: true },  color: defaultColor, name: "show analytic / extras" },
   "show_normals": { config: { isChecked: false }, color: defaultColor, name: "show mirror normals" },
+  "light_theme":  { config: { isChecked: false }, color: defaultColor, name: "light theme" },
 };
 
 // Exact-value number inputs bound to sliders.
@@ -164,6 +187,14 @@ function setup() {
     checkbox.instance = instance;
   }
 
+  // Theme: derive from the light-theme checkbox; apply now and on toggle.
+  theme = checkboxes.light_theme.instance.checked() ? "light" : "dark";
+  applyTheme();
+  checkboxes.light_theme.instance.changed(() => {
+    theme = checkboxes.light_theme.instance.checked() ? "light" : "dark";
+    applyTheme();
+  });
+
   // Exact-value number inputs (type a precise D / W / angle).
   numInputsY = y + 50;
   NUM_INPUTS.forEach((id, i) => {
@@ -186,6 +217,12 @@ function setup() {
     inp.elt.addEventListener("change", () => apply(true));
     numInputs[id] = inp;
   });
+
+  // Export-to-PDF button (technical drawing + QR to this exact configuration).
+  const exportBtn = createButton("Export PDF");
+  exportBtn.position(NUM_X[0], numInputsY + 34);
+  exportBtn.class("export-btn");
+  exportBtn.mousePressed(exportPDF);
 
   applyStep(); // sliders start in fine mode
 
@@ -335,6 +372,243 @@ function endDrag() {
     persistSource();
   }
   panning = false;
+}
+
+// Build a URL to this page that encodes the EXACT current configuration, so a
+// QR/link reproduces it. (All slider/checkbox values are written explicitly,
+// including defaults that are otherwise absent from the URL.)
+function buildExportURL() {
+  const sp = new URLSearchParams();
+  for (const id in sliders) sp.set(id, sliders[id].instance.value());
+  for (const id in checkboxes) sp.set(id, Number(checkboxes[id].instance.checked()));
+  sp.set("src_g", srcG.toFixed(2));
+  sp.set("src_w", srcW.toFixed(2));
+  return location.origin + location.pathname + "?" + sp.toString();
+}
+
+// Render a QR code for `text` to a PNG data URL (drawn onto an offscreen canvas
+// so it embeds reliably in the PDF).
+function qrToPngDataUrl(text, cell = 4, margin = 2) {
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const size = (n + margin * 2) * cell;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#000";
+  for (let r = 0; r < n; r++)
+    for (let col = 0; col < n; col++)
+      if (qr.isDark(r, col)) ctx.fillRect((col + margin) * cell, (r + margin) * cell, cell, cell);
+  return c.toDataURL("image/png");
+}
+
+// --- PDF dimension-line helpers (ISO-ish: extension lines + arrowheads) -----
+function pdfArrowHead(doc, tx, ty, dx, dy, size) {
+  const bx = tx - dx * size, by = ty - dy * size;
+  const px = -dy, py = dx;
+  doc.triangle(tx, ty, bx + px * size * 0.4, by + py * size * 0.4, bx - px * size * 0.4, by - py * size * 0.4, "F");
+}
+function pdfDimH(doc, x1, x2, featY, dimY, label) {
+  if (x1 > x2) { const t = x1; x1 = x2; x2 = t; }
+  doc.setDrawColor(70); doc.setFillColor(70); doc.setLineWidth(0.2);
+  const s = dimY >= featY ? 1 : -1;
+  doc.line(x1, featY + 1.2 * s, x1, dimY + 1.5 * s);
+  doc.line(x2, featY + 1.2 * s, x2, dimY + 1.5 * s);
+  doc.line(x1, dimY, x2, dimY);
+  pdfArrowHead(doc, x1, dimY, -1, 0, 2.2);
+  pdfArrowHead(doc, x2, dimY, 1, 0, 2.2);
+  doc.setFontSize(8); doc.setTextColor(25);
+  doc.text(label, (x1 + x2) / 2, dimY - 1.4, { align: "center" });
+}
+function pdfDimV(doc, y1, y2, featX, dimX, label) {
+  if (y1 > y2) { const t = y1; y1 = y2; y2 = t; }
+  doc.setDrawColor(70); doc.setFillColor(70); doc.setLineWidth(0.2);
+  const s = dimX >= featX ? 1 : -1;
+  doc.line(featX + 1.2 * s, y1, dimX + 1.5 * s, y1);
+  doc.line(featX + 1.2 * s, y2, dimX + 1.5 * s, y2);
+  doc.line(dimX, y1, dimX, y2);
+  pdfArrowHead(doc, dimX, y1, 0, -1, 2.2);
+  pdfArrowHead(doc, dimX, y2, 0, 1, 2.2);
+  doc.setFontSize(8); doc.setTextColor(25);
+  doc.text(label, dimX + s * 2.2, (y1 + y2) / 2, { align: "center", angle: 90 });
+}
+
+// Second page: a professional, fully-dimensioned technical drawing (landscape).
+function addTechnicalDrawingPage(doc, s) {
+  doc.addPage("a4", "landscape");
+  const PW = 297, PH = 210, M = 10;
+  doc.setDrawColor(40); doc.setLineWidth(0.5); doc.rect(M, M, PW - 2 * M, PH - 2 * M);
+
+  // Title block (bottom-right).
+  const tbW = 100, tbH = 44, tbX = PW - M - tbW, tbY = PH - M - tbH;
+
+  // Drawing window (leave margins for the dimension lines around the cavity).
+  const dwL = M + 30, dwR = PW - M - 14, dwT = M + 26, dwB = tbY - 24;
+  const pg = s.modelPts.map((p) => p.g), pw = s.modelPts.map((p) => p.w);
+  const gMin = Math.min(0, s.srcG, ...pg), gMax = Math.max(s.D, ...pg);
+  const wMin = Math.min(0, s.srcW, ...pw), wMax = Math.max(s.W, ...pw);
+  const gSpan = gMax - gMin || 1, wSpan = wMax - wMin || 1;
+  const sc = Math.min((dwR - dwL) / gSpan, (dwB - dwT) / wSpan);
+  const offX = dwL + ((dwR - dwL) - gSpan * sc) / 2;
+  const offY = dwT + ((dwB - dwT) + wSpan * sc) / 2;
+  const X = (g) => offX + (g - gMin) * sc;
+  const Y = (w) => offY - (w - wMin) * sc;
+  const srcLeft = s.srcG < s.D / 2;
+
+  // Mirrors (heavy object lines) + labels.
+  doc.setDrawColor(20); doc.setLineWidth(1.1);
+  doc.line(X(0), Y(0), X(0), Y(s.W));
+  doc.line(X(s.D), Y(0), X(s.D), Y(s.W));
+  doc.setFontSize(7); doc.setTextColor(90);
+  doc.text("mirror A", X(0), Y(s.W) - 2, { align: "center" });
+  doc.text("mirror B", X(s.D), Y(s.W) - 2, { align: "center" });
+
+  // Beam path (thin) + reflection spots + source.
+  doc.setDrawColor(200, 60, 60); doc.setLineWidth(0.3);
+  for (let i = 0; i < s.modelPts.length - 1; i++)
+    doc.line(X(s.modelPts[i].g), Y(s.modelPts[i].w), X(s.modelPts[i + 1].g), Y(s.modelPts[i + 1].w));
+  doc.setFillColor(200, 60, 60);
+  for (let i = 1; i < s.modelPts.length; i++) doc.circle(X(s.modelPts[i].g), Y(s.modelPts[i].w), 0.5, "F");
+  doc.setFillColor(20); doc.circle(X(s.srcG), Y(s.srcW), 1.1, "F");
+  doc.setFontSize(7); doc.setTextColor(40);
+  doc.text("laser source", X(s.srcG), Y(s.srcW) + 4.5, { align: srcLeft ? "left" : "right" });
+  doc.text("entry angle " + s.angleDeg.toFixed(3) + " deg (from straight-across)",
+    X(s.srcG), Y(s.srcW) + 8.5, { align: srcLeft ? "left" : "right" });
+
+  // Dimensions: D below, W on the side away from the source, behind/side at source.
+  pdfDimH(doc, X(0), X(s.D), Y(wMin), Y(wMin) + 13, "D = " + s.D + " cm");
+  const wDimX = srcLeft ? X(gMax) + 13 : X(gMin) - 13;
+  const wFeatX = srcLeft ? X(s.D) : X(0);
+  pdfDimV(doc, Y(0), Y(s.W), wFeatX, wDimX, "W = " + s.W + " cm");
+  if (s.behindMirror > 0) {
+    pdfDimH(doc, X(s.srcG), X(srcLeft ? 0 : s.D), Y(wMax), Y(wMax) - 13, s.behindMirror.toFixed(1) + " cm behind");
+  }
+  if (Math.abs(s.sideOffset) > 1e-6) {
+    const sideDimX = srcLeft ? X(s.srcG) - 9 : X(s.srcG) + 9;
+    pdfDimV(doc, Y(0), Y(s.srcW), X(s.srcG), sideDimX, "side " + s.sideOffset.toFixed(1));
+  }
+
+  // Scale bar (a round number of cm).
+  const barCm = gSpan > 150 ? 50 : gSpan > 40 ? 20 : 5;
+  const sbx = dwL, sby = PH - M - 6;
+  doc.setDrawColor(40); doc.setLineWidth(0.4);
+  doc.line(sbx, sby, sbx + barCm * sc, sby);
+  doc.line(sbx, sby - 1.5, sbx, sby + 1.5);
+  doc.line(sbx + barCm * sc, sby - 1.5, sbx + barCm * sc, sby + 1.5);
+  doc.setFontSize(7); doc.setTextColor(60);
+  doc.text("0", sbx, sby + 4, { align: "center" });
+  doc.text(barCm + " cm", sbx + barCm * sc, sby + 4, { align: "center" });
+
+  // Title block content.
+  doc.setDrawColor(40); doc.setLineWidth(0.3); doc.rect(tbX, tbY, tbW, tbH);
+  doc.line(tbX, tbY + 11, tbX + tbW, tbY + 11);
+  doc.line(tbX + tbW / 2, tbY + 11, tbX + tbW / 2, tbY + tbH);
+  doc.setFontSize(11); doc.setTextColor(20); doc.setFont("helvetica", "bold");
+  doc.text("LASER REFLECTION - TOP VIEW", tbX + 3, tbY + 7);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40);
+  const ratio = Math.max(1, Math.round(10 / sc)); // real : paper (mm)
+  const left = [["SCALE", "1 : " + ratio], ["UNITS", "cm"], ["DATE", new Date().toLocaleDateString()]];
+  const right = [["REFLECTIONS", String(s.count)], ["BEAM DIA", s.beamDia.toFixed(2) + " cm"], ["ANGLE", s.angleDeg.toFixed(3) + " deg"]];
+  left.forEach((r, i) => { doc.setTextColor(110); doc.text(r[0], tbX + 3, tbY + 18 + i * 8); doc.setTextColor(25); doc.text(r[1], tbX + 22, tbY + 18 + i * 8); });
+  right.forEach((r, i) => { doc.setTextColor(110); doc.text(r[0], tbX + tbW / 2 + 3, tbY + 18 + i * 8); doc.setTextColor(25); doc.text(r[1], tbX + tbW / 2 + 28, tbY + 18 + i * 8); });
+}
+
+// Export an A4 PDF: parameters table + to-scale technical drawing + a QR code
+// linking back to this page with the exact parameters.
+function exportPDF() {
+  if (!window.jspdf || typeof qrcode === "undefined") {
+    alert("PDF libraries are still loading - try again in a moment.");
+    return;
+  }
+  if (!snap) return;
+  const s = snap;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const PW = 210, PH = 297, M = 16;
+  const url = buildExportURL();
+
+  // Header
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(20);
+  doc.text("Laser reflection - top view", M, M);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(110);
+  doc.text(new Date().toLocaleString(), M, M + 6);
+  doc.setDrawColor(180); doc.setLineWidth(0.3); doc.line(M, M + 9, PW - M, M + 9);
+
+  // Parameters table
+  const usable = s.firstBad > 0 ? s.firstBad - 1 : s.nSpots;
+  const rows = [
+    ["Ring diameter D", s.D + " cm"],
+    ["Mirror width W", s.W + " cm"],
+    ["Laser angle", s.angleDeg.toFixed(3) + " deg (from straight-across)"],
+    ["Source position", (s.behindMirror > 0 ? s.behindMirror.toFixed(1) + " cm behind " + s.behindWhich + " mirror" : "inside gap") + ", side " + s.sideOffset.toFixed(1) + " cm"],
+    ["Reflections", String(s.count) + (s.exited ? "" : " (capped)")],
+    ["   on left / right mirror", s.hitsLeft + " / " + s.hitsRight],
+    ["Beam diameter", s.beamDia.toFixed(2) + " cm" + (s.beamSpread > 0 ? "  ->  " + s.grownDia.toFixed(2) + " cm by last" : "")],
+    ["Beam spread", s.beamSpread.toFixed(3) + " mrad / bounce"],
+    ["Usable (clean) reflections", usable + (s.firstBad > 0 ? "  (" + s.badReason + " after)" : "")],
+    ["Spot spacing (one mirror)", s.spotSpacing.toFixed(2) + " cm"],
+    ["Optical path in cavity", s.pathCm >= 100 ? (s.pathCm / 100).toFixed(2) + " m" : s.pathCm.toFixed(1) + " cm"],
+    ["Ring segments", s.segments + " flat mirrors"],
+    ["Segment sagitta", s.sag.toFixed(2) + " cm (gap varies up to " + (2 * s.sag).toFixed(2) + " cm)"],
+    ["Full-width max W/(D*tan)", isFinite(s.analytic) ? s.analytic.toFixed(1) : "infinite"],
+  ];
+  doc.setFontSize(10);
+  let ty = M + 18;
+  rows.forEach((r) => {
+    doc.setTextColor(95); doc.text(r[0], M, ty);
+    doc.setTextColor(20); doc.text(String(r[1]), M + 64, ty);
+    ty += 6;
+  });
+
+  // Technical drawing box (to scale)
+  const bx = M, byTop = ty + 6, bw = PW - 2 * M, bh = 92;
+  doc.setDrawColor(150); doc.setLineWidth(0.2); doc.rect(bx, byTop, bw, bh);
+  doc.setFontSize(9); doc.setTextColor(110); doc.text("top view (to scale)", bx + 2, byTop + 5);
+
+  const pad = 14;
+  const gs = s.modelPts.map((p) => p.g).concat([0, s.D, s.srcG]);
+  const ws = s.modelPts.map((p) => p.w).concat([0, s.W, s.srcW]);
+  const gMin = Math.min(...gs), gMax = Math.max(...gs);
+  const wMin = Math.min(...ws), wMax = Math.max(...ws);
+  const gSpan = gMax - gMin || 1, wSpan = wMax - wMin || 1;
+  const sc = Math.min((bw - 2 * pad) / gSpan, (bh - 2 * pad) / wSpan);
+  const offX = bx + (bw - gSpan * sc) / 2, offY = byTop + (bh + wSpan * sc) / 2;
+  const X = (g) => offX + (g - gMin) * sc;
+  const Y = (w) => offY - (w - wMin) * sc;
+
+  // Mirrors
+  doc.setLineWidth(0.9); doc.setDrawColor(30);
+  doc.line(X(0), Y(0), X(0), Y(s.W));
+  doc.line(X(s.D), Y(0), X(s.D), Y(s.W));
+  // Beam path
+  doc.setDrawColor(210, 40, 40); doc.setLineWidth(0.4);
+  for (let i = 0; i < s.modelPts.length - 1; i++) {
+    doc.line(X(s.modelPts[i].g), Y(s.modelPts[i].w), X(s.modelPts[i + 1].g), Y(s.modelPts[i + 1].w));
+  }
+  // Reflection spots + source
+  doc.setFillColor(210, 40, 40);
+  for (let i = 1; i < s.modelPts.length; i++) doc.circle(X(s.modelPts[i].g), Y(s.modelPts[i].w), 0.6, "F");
+  doc.setFillColor(20); doc.circle(X(s.srcG), Y(s.srcW), 1.0, "F");
+  // Dimension labels
+  doc.setFontSize(8); doc.setTextColor(90);
+  doc.text("D = " + s.D + " cm", (X(0) + X(s.D)) / 2, Y(0) + 6, { align: "center" });
+  doc.text("W = " + s.W + " cm", X(0) - 2, (Y(0) + Y(s.W)) / 2, { align: "right" });
+
+  // QR code -> exact-parameters link
+  const qrSize = 38, qrX = PW - M - qrSize, qrY = PH - M - qrSize;
+  try {
+    doc.addImage(qrToPngDataUrl(url), "PNG", qrX, qrY, qrSize, qrSize);
+  } catch (e) { /* QR optional */ }
+  doc.setFontSize(9); doc.setTextColor(60);
+  doc.text("Scan to open with these exact parameters:", M, qrY + 6);
+  doc.setFontSize(7); doc.setTextColor(120);
+  doc.text(doc.splitTextToSize(url, qrX - M - 6), M, qrY + 12);
+
+  addTechnicalDrawingPage(doc, s); // page 2: dimensioned technical drawing
+  doc.save("laser-top-view.pdf");
 }
 
 function draw() {
@@ -687,4 +961,12 @@ function draw() {
   textAlign(RIGHT, BASELINE);
   text("fps: " + parseInt(frameRate()), width - 12, 20);
   textAlign(LEFT, BASELINE);
+
+  // Publish a snapshot (model coords) for PDF export.
+  snap = {
+    D, W, angleDeg, srcG, srcW, beamDia, beamSpread, falloff, segments,
+    count, nSpots, exited, firstBad, badReason, grownDia, spotSpacing, sag,
+    analytic, pathCm, behindMirror, behindWhich, sideOffset, hitsLeft, hitsRight,
+    modelPts: points.map((p) => ({ g: (p.x - originX) / scale, w: (originY - p.y) / scale })),
+  };
 }

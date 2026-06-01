@@ -59,3 +59,31 @@ main {
 .num-input::-webkit-inner-spin-button {
   opacity: 0.55;
 }
+
+.export-btn {
+  background: #2a2a30;
+  color: #e2e2e8;
+  border: 1px solid #5a5a64;
+  border-radius: 5px;
+  padding: 5px 12px;
+  margin: 2px;
+  font-family: sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.export-btn:hover { background: #3a3a44; }
+
+/* Light theme */
+body.light .num-input {
+  background: #ffffff;
+  color: #111;
+  border-color: #b5b5bd;
+}
+body.light .export-btn {
+  background: #e8e8ec;
+  color: #111;
+  border-color: #b5b5bd;
+}
+body.light .export-btn:hover { background: #dcdce2; }
+body.light .view-nav { color: #333; }
