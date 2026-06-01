@@ -20,11 +20,13 @@
 // Drift per leg (one gap crossing)   = D * tan(angle)   [width units]
 // Reflections that fit (full width)  ~ W / (D * tan(angle))
 //
-// The laser source is a draggable handle and may sit anywhere, including behind
-// a mirror. Mirrors are one-sided (only the inner face reflects), so a beam
-// coming from behind passes through and enters the cavity. Reuses Boundary
-// (geometry + inward normal) and Ray (segment cast + reflect) from the
-// front-view app.
+// Extras: real beam-diameter spots with overlap flag, a spot-position list + cm
+// ruler, exact numeric entry + arrow-key source nudge, optical path length +
+// incidence angle, and the segmented-ring sagitta (how far a flat mirror segment
+// moves as the polygonal ring rotates). The laser source is a draggable handle
+// and may sit behind a mirror; mirrors are one-sided (inner face reflects).
+// Wheel zooms, drag empty space pans, double-click resets. Reuses Boundary and
+// Ray from the front-view app.
 
 const BACKGROUND_COLOR = 26;
 const SLIDER_SIZE = 180;
@@ -35,9 +37,11 @@ const REFLECTIONS_LIMIT = 4000; // safety cap (e.g. when angle == 0)
 const EPS = 0.001;
 const MARGIN = 90;  // px of empty space kept around the cavity (room to drag the source "behind")
 const HANDLE_R = 7; // laser-source handle radius (px)
+const NUDGE = 0.1;  // cm the arrow keys move the source
 
 const defaultColor = [225];
 const laserColor = [255, 70, 70];
+const overlapColor = [255, 180, 40]; // spots that would overlap
 const mirrorColorA = [90, 170, 255];  // left mirror
 const mirrorColorB = [205, 120, 255]; // right mirror
 const dimColor = [120, 120, 130];
@@ -49,14 +53,14 @@ const urlSearchParams = new URLSearchParams(window.location.search);
 const params = Object.fromEntries(urlSearchParams.entries());
 
 // Cached trace: trace() is geometry-only, so recompute it only when an input
-// (D, W, angle, source position) changes rather than on every frame.
+// (D, W, angle, source, view) changes rather than on every frame.
 let traceCache = null;
 let traceKey = "";
 
 // Laser source in MODEL coords (may be outside the cavity, e.g. g < 0 = behind
-// the left mirror). Updated by dragging the handle.
-let srcG = -15;
-let srcW = -2;
+// the left mirror). Updated by dragging the handle or the arrow keys.
+let srcG = -11;
+let srcW = -1.0;
 let dragging = false;
 
 // View transform: scale = auto-fit * zoom, plus a screen-pixel pan offset.
@@ -72,26 +76,40 @@ let srcScreen = { x: -100, y: -100 };
 
 // Slider step mode: fine by default (precision); hold Shift for coarse/fast.
 let fineMode = true;
+let numInputsY = 0; // y of the exact-value inputs row (set in setup, read by draw)
 
 const sliders = {
-  "diameter":    { config: [200, 320, 300, 1],   fine: 0.1,  unit: " cm", name: "ring diameter D (mirror gap)", color: mirrorColorA },
-  "width":       { config: [15, 40, 20, 0.5],     fine: 0.05, unit: " cm", name: "mirror width W",               color: mirrorColorB },
-  "angle":       { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
-  "beam_weight": { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam weight",                    color: defaultColor },
+  "diameter":      { config: [200, 320, 300, 1],   fine: 0.1,  unit: " cm",  name: "ring diameter D (mirror gap)", color: mirrorColorA },
+  "width":         { config: [15, 40, 20, 0.5],     fine: 0.05, unit: " cm",  name: "mirror width W",               color: mirrorColorB },
+  "angle":         { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
+  "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments",                color: dimColor, format: (v) => v + " (flat mirrors)" },
+  "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, unit: " cm",  name: "beam diameter",                color: laserColor },
+  "falloff":       { config: [0, 0.9, 0.2, 0.01],   fine: 0.005, name: "falloff (dim per reflection)",  color: laserColor, format: (v) => (v * 100).toFixed(0) + "% / bounce" },
+  "beam_weight":   { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam line weight",             color: defaultColor },
 };
 
 const checkboxes = {
   "show_spots":   { config: { isChecked: true },  color: defaultColor, name: "mark reflection spots" },
-  "show_estimate":{ config: { isChecked: true },  color: defaultColor, name: "show analytic estimate" },
+  "beam_width":   { config: { isChecked: true },  color: defaultColor, name: "show beam width (to scale)" },
+  "show_estimate":{ config: { isChecked: true },  color: defaultColor, name: "show analytic / extras" },
   "show_normals": { config: { isChecked: false }, color: defaultColor, name: "show mirror normals" },
 };
 
+// Exact-value number inputs bound to sliders.
+const NUM_INPUTS = ["diameter", "width", "angle"];
+const NUM_LABELS = { diameter: "D (cm)", width: "W (cm)", angle: "angle" };
+const NUM_X = [12, 92, 172]; // x of each exact-value input
+const numInputs = {};
+
 function setSearchParams(key, value) {
-  if ("URLSearchParams" in window) {
-    const searchParams = new URLSearchParams(window.location.search);
-    searchParams.set(key, value);
-    history.pushState(null, "", window.location.pathname + "?" + searchParams.toString());
-  }
+  const sp = new URLSearchParams(window.location.search);
+  sp.set(key, value);
+  history.replaceState(null, "", window.location.pathname + "?" + sp.toString());
+}
+
+function persistSource() {
+  setSearchParams("src_g", srcG.toFixed(2));
+  setSearchParams("src_w", srcW.toFixed(2));
 }
 
 function onInputChange(event) {
@@ -113,7 +131,6 @@ function applyStep() {
 function setup() {
   createCanvas(1280, 840);
 
-  // Restore the dragged source position from the URL, if present.
   if (params.src_g !== undefined && !Number.isNaN(Number(params.src_g))) srcG = Number(params.src_g);
   if (params.src_w !== undefined && !Number.isNaN(Number(params.src_w))) srcW = Number(params.src_w);
 
@@ -146,6 +163,29 @@ function setup() {
     checkbox.instance = instance;
   }
 
+  // Exact-value number inputs (type a precise D / W / angle).
+  numInputsY = y + 50;
+  NUM_INPUTS.forEach((id, i) => {
+    const s = sliders[id];
+    const inp = createInput(String(s.instance.value()), "number");
+    inp.position(NUM_X[i], numInputsY);
+    inp.size(66);
+    inp.class("num-input");
+    inp.elt.min = s.config[0];
+    inp.elt.max = s.config[1];
+    inp.elt.step = s.fine;
+    const apply = (persist) => {
+      const v = Number(inp.value());
+      if (Number.isNaN(v)) return;
+      const c = constrain(v, s.config[0], s.config[1]);
+      s.instance.value(c);
+      if (persist) setSearchParams(id, c);
+    };
+    inp.elt.addEventListener("input", () => apply(false));
+    inp.elt.addEventListener("change", () => apply(true));
+    numInputs[id] = inp;
+  });
+
   applyStep(); // sliders start in fine mode
 
   // Fine steps by default (precision); hold Shift for coarse/fast steps.
@@ -153,6 +193,19 @@ function setup() {
   window.addEventListener("keyup", (e) => { if (e.key === "Shift" && !fineMode) { fineMode = true; applyStep(); } });
   window.addEventListener("blur", () => { if (!fineMode) { fineMode = true; applyStep(); } });
   window.addEventListener("mouseup", endDrag); // ends drags that release off-canvas too
+
+  // Arrow keys nudge the source (unless a control input is focused).
+  window.addEventListener("keydown", (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT") return;
+    if (e.key === "ArrowLeft") srcG -= NUDGE;
+    else if (e.key === "ArrowRight") srcG += NUDGE;
+    else if (e.key === "ArrowUp") srcW += NUDGE;
+    else if (e.key === "ArrowDown") srcW -= NUDGE;
+    else return;
+    persistSource();
+    e.preventDefault();
+  });
 }
 
 // Bounce a ray between the two finite, one-sided mirror segments until it walks
@@ -278,8 +331,7 @@ function doubleClicked() {
 function endDrag() {
   if (dragging) {
     dragging = false;
-    setSearchParams("src_g", srcG.toFixed(2));
-    setSearchParams("src_w", srcW.toFixed(2));
+    persistSource();
   }
   panning = false;
 }
@@ -292,10 +344,19 @@ function draw() {
   const W = sliders.width.instance.value();
   const angleDeg = sliders.angle.instance.value();
   const beta = radians(angleDeg);
+  const segments = sliders.segments.instance.value();
+  const beamDia = sliders.beam_diameter.instance.value();
   const beamWeight = sliders.beam_weight.instance.value();
+  const falloff = sliders.falloff.instance.value();
   const showSpots = checkboxes.show_spots.instance.checked();
-  const showEstimate = checkboxes.show_estimate.instance.checked();
+  const beamWidthViz = checkboxes.beam_width.instance.checked();
+  const showExtras = checkboxes.show_estimate.instance.checked();
   const showNormals = checkboxes.show_normals.instance.checked();
+
+  // Keep the number inputs in sync with the sliders (unless being edited).
+  for (const id of NUM_INPUTS) {
+    if (document.activeElement !== numInputs[id].elt) numInputs[id].value(sliders[id].instance.value());
+  }
 
   // --- control labels ------------------------------------------------------
   noStroke();
@@ -312,6 +373,11 @@ function draw() {
     fill(...color);
     text(name, 34, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
   }
+  fill(...dimColor);
+  text("type exact values:", 12, numInputsY - 22);
+  textSize(10);
+  NUM_INPUTS.forEach((id, i) => text(NUM_LABELS[id], NUM_X[i] + 2, numInputsY - 6));
+  textSize(12);
 
   // --- map model units -> screen (uniform scale = auto-fit * zoom, + pan) ----
   const plotW = PLOT.right - PLOT.left;
@@ -327,7 +393,6 @@ function draw() {
   const xR = originX + pxD;    // right mirror
   const yB = originY;          // bottom end of the mirrors (w = 0)
   const yT = originY - pxW;    // top end of the mirrors (w = W)
-  const gx = (g) => originX + g * scale;
   const wy = (w) => originY - w * scale;
 
   // Two finite mirror segments, wound so their normals point INTO the cavity.
@@ -336,7 +401,7 @@ function draw() {
   const mirrors = [mirrorLeft, mirrorRight];
 
   // Laser source + initial direction.
-  const srcX = gx(srcG);
+  const srcX = originX + srcG * scale;
   const srcY = wy(srcW);
   srcScreen = { x: srcX, y: srcY };
   const sourceOnLeft = srcG < D / 2;
@@ -344,14 +409,17 @@ function draw() {
   const sgnW = srcW < W / 2 ? 1 : -1;   // drift toward the bulk of the width
   const dir = createVector(sgnG * cos(beta), -sgnW * sin(beta)); // screen: +w is up = -y
 
-  // How far the source sits behind a mirror, and its offset along the width.
   const behindMirror = srcG < 0 ? -srcG : (srcG > D ? srcG - D : 0);
   const behindWhich = sourceOnLeft ? "left" : "right";
   const sideOffset = srcW; // 0 = bottom end of the mirror, W = top end
 
-  // --- trace (cached) ------------------------------------------------------
-  // Key includes the view transform (zoom/pan) since the traced points are in
-  // screen coords — otherwise the cached beam would desync from the mirrors.
+  // Segmented-ring sagitta: how far a flat mirror chord deviates from the true
+  // arc, i.e. how much the surface moves (radially -> along the gap) as the ring
+  // rotates. R = D/2 (vertices on the circle); midpoint sits sag cm inside.
+  const sag = (D / 2) * (1 - Math.cos(Math.PI / segments));
+  const sagPx = sag * scale;
+
+  // --- trace (cached; key includes the view transform) ---------------------
   const traceK = [D, W, angleDeg, srcG.toFixed(3), srcW.toFixed(3), zoom.toFixed(3), Math.round(panX), Math.round(panY)].join("|");
   if (traceK !== traceKey) {
     traceCache = trace(createVector(srcX, srcY), dir, mirrors);
@@ -365,6 +433,15 @@ function draw() {
   drawingContext.beginPath();
   drawingContext.rect(PLOT.left, PLOT.top, plotW, plotH);
   drawingContext.clip();
+
+  // --- segment-motion band (surface sweep as the ring rotates) -------------
+  // Each flat mirror surface can sit anywhere from the nominal face inward by
+  // `sag` as the polygon rotates; draw that envelope.
+  noStroke();
+  fill(...mirrorColorA, 45);
+  rect(xL, yT, sagPx, pxW);          // left mirror sweeps inward (+x)
+  fill(...mirrorColorB, 45);
+  rect(xR - sagPx, yT, sagPx, pxW);  // right mirror sweeps inward (-x)
 
   // --- draw the cavity -----------------------------------------------------
   // Walk-off ends (top/bottom of the mirror strips): past these the beam leaves.
@@ -386,32 +463,52 @@ function draw() {
     for (const m of mirrors) arrow(m.c.x, m.c.y, m.c.x + m.n.x, m.c.y + m.n.y);
   }
 
-  // Beam: entry (source -> first hit) dashed, bounces solid, exit dashed.
-  stroke(...laserColor);
-  strokeWeight(beamWeight);
+  // --- beam: per-reflection falloff + optional real-width band -------------
+  // segAlpha(i) = brightness after i reflections (entry segment i = 0 is full).
+  const segAlpha = (i) => 255 * Math.pow(1 - falloff, i);
+  const beamBandW = Math.max(1, beamDia * scale); // real beam width, px (to scale)
   if (count > 0) {
-    dashed(points[0].x, points[0].y, points[1].x, points[1].y);
-    for (let i = 1; i < points.length - 1; i++) {
-      line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = segAlpha(i);
+      if (beamWidthViz) {
+        stroke(...laserColor, a * 0.22);
+        strokeWeight(beamBandW);
+        line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+      }
+      stroke(...laserColor, a);
+      strokeWeight(beamWeight);
+      if (i === 0) dashed(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y); // entry
+      else line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
     }
   }
   if (exited) {
     const last = points[points.length - 1];
     const exitEnd = p5.Vector.add(last, p5.Vector.copy(ray.dir).setMag(plotW + plotH));
-    stroke(...laserColor, 170);
+    const a = segAlpha(count);
+    if (beamWidthViz) { stroke(...laserColor, a * 0.22); strokeWeight(beamBandW); line(last.x, last.y, exitEnd.x, exitEnd.y); }
+    stroke(...laserColor, a * 0.7);
+    strokeWeight(beamWeight);
     dashed(last.x, last.y, exitEnd.x, exitEnd.y);
   }
 
-  // Reflection spots, coloured by which mirror they land on.
-  let hitsLeft = 0;
-  let hitsRight = 0;
+  // --- reflection spots / footprints + overlap detection -------------------
+  const spotSpacing = 2 * D * Math.tan(beta); // cm between consecutive spots on one mirror
+  const overlap = beta > 0 && spotSpacing > 0 && spotSpacing < beamDia;
+  let hitsLeft = 0, hitsRight = 0;
+  const leftWs = [], rightWs = [];
   for (let i = 1; i < points.length; i++) {
     const onLeft = Math.abs(points[i].x - xL) < Math.abs(points[i].x - xR);
-    if (onLeft) hitsLeft++; else hitsRight++;
-    if (showSpots) {
-      noStroke();
-      fill(...(onLeft ? mirrorColorA : mirrorColorB));
-      circle(points[i].x, points[i].y, Math.max(3, beamWeight + 3));
+    const wv = (originY - points[i].y) / scale;
+    if (onLeft) { hitsLeft++; leftWs.push(wv); } else { hitsRight++; rightWs.push(wv); }
+    if (!showSpots) continue;
+    const a = segAlpha(i - 1); // brightness of the beam arriving at this spot
+    const c = overlap ? overlapColor : (onLeft ? mirrorColorA : mirrorColorB);
+    if (beamWidthViz) {                       // real-diameter footprint
+      const d = Math.max(2, beamDia * scale);
+      noStroke(); fill(...c, a * 0.45); circle(points[i].x, points[i].y, d);
+      noFill(); stroke(...c, a); strokeWeight(1); circle(points[i].x, points[i].y, d);
+    } else {                                  // simple marker dot
+      noStroke(); fill(...c, a); circle(points[i].x, points[i].y, Math.max(3, beamWeight + 3));
     }
   }
 
@@ -436,78 +533,110 @@ function draw() {
   text(tag, srcX, srcY + HANDLE_R + 5);
   pop();
 
-  // --- dimension annotations ----------------------------------------------
+  // --- dimensions + cm ruler ----------------------------------------------
+  // D below the cavity.
   stroke(...dimColor);
   strokeWeight(1);
-  const dY = yB + 34;          // D arrow below the cavity
+  const dY = yB + 34;
   arrow(xL, dY, xR, dY); arrow(xR, dY, xL, dY);
-  // Width dimension on the side OPPOSITE the laser source, so it stays clear of it.
-  const wX = sourceOnLeft ? xR + 34 : xL - 34;
-  arrow(wX, yB, wX, yT); arrow(wX, yT, wX, yB);
   noStroke();
   fill(...dimColor);
   textAlign(CENTER, TOP);
   text("D = " + D + " cm (mirror gap)", (xL + xR) / 2, dY + 6);
+
+  // W as a cm ruler on the side opposite the source.
+  const wX = sourceOnLeft ? xR + 30 : xL - 30;
+  const labelSide = sourceOnLeft ? 1 : -1;
   push();
-  translate(wX + (sourceOnLeft ? 8 : -8), (yB + yT) / 2);
-  rotate(-HALF_PI);
-  textAlign(CENTER, sourceOnLeft ? TOP : BOTTOM);
-  text("W = " + W + " cm", 0, 0);
+  textSize(10);
+  textAlign(sourceOnLeft ? LEFT : RIGHT, CENTER);
+  stroke(...dimColor);
+  strokeWeight(1);
+  line(wX, yB, wX, yT);
+  const tickStep = W <= 25 ? 5 : 10;
+  const drawTick = (cm) => {
+    const ty = wy(cm);
+    stroke(...dimColor);
+    line(wX, ty, wX + labelSide * 6, ty);
+    noStroke();
+    fill(...dimColor);
+    text(cm % 1 ? cm.toFixed(1) : cm, wX + labelSide * 9, ty);
+  };
+  for (let cm = 0; cm < W - 1e-6; cm += tickStep) drawTick(cm);
+  drawTick(W); // always mark the exact width
   pop();
+  noStroke();
+  fill(...dimColor);
+  textAlign(CENTER, BOTTOM);
+  text("W = " + W + " cm", wX, yT - 10);
   textAlign(LEFT, BASELINE);
 
   drawingContext.restore(); // end plot clip
 
-  // --- readout -------------------------------------------------------------
-  const driftPerLeg = D * Math.tan(beta);                 // width units per gap-crossing
-  const spotSpacing = 2 * driftPerLeg;                    // spacing between spots on one mirror
-  const analytic = beta > 0 ? W / driftPerLeg : Infinity; // entry-independent estimate (continuous)
+  // --- readout panel -------------------------------------------------------
+  const analytic = beta > 0 ? W / (D * Math.tan(beta)) : Infinity; // entry-independent full-width max
   const capped = !exited && count >= REFLECTIONS_LIMIT;
+  // Optical path inside the cavity (first reflection to last).
+  let pathPx = 0;
+  for (let i = 1; i < points.length - 1; i++) pathPx += dist(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+  const pathCm = pathPx / scale;
 
   noStroke();
+  fill(BACKGROUND_COLOR, 205);
+  rect(PLOT.left - 8, 40, 712, 162);
+
   fill(...laserColor);
   textSize(26);
   let countLabel;
-  if (capped && beta === 0) countLabel = String.fromCharCode(8734); // never drifts -> infinite
-  else if (capped) countLabel = "~" + Math.round(analytic);          // finite, but too many to draw
-  else countLabel = String(count);                                    // the actual traced count
-  text("Reflections: " + countLabel, PLOT.left, 56);
+  if (capped && beta === 0) countLabel = String.fromCharCode(8734);
+  else if (capped) countLabel = "~" + Math.round(analytic);
+  else countLabel = String(count);
+  text("Reflections: " + countLabel, PLOT.left, 64);
   textSize(13);
 
   fill(...defaultColor);
   let info;
-  if (capped && beta === 0) {
-    info = "angle 0 - beam never drifts off the mirror (infinite reflections)";
-  } else if (capped) {
-    info = "trace capped at " + REFLECTIONS_LIMIT + " - raise the angle to draw them all";
-  } else if (count === 0) {
-    info = "beam misses the mirrors - drag the source or change the angle";
-  } else {
-    info = "on left mirror: " + hitsLeft + "    on right mirror: " + hitsRight
-      + (exited ? "    (beam left the ring)" : "");
-  }
-  text(info, PLOT.left, 80);
+  if (capped && beta === 0) info = "angle 0 - beam never drifts off the mirror (infinite reflections)";
+  else if (capped) info = "trace capped at " + REFLECTIONS_LIMIT + " - raise the angle to draw them all";
+  else if (count === 0) info = "beam misses the mirrors - drag the source or change the angle";
+  else info = "on left mirror: " + hitsLeft + "    on right mirror: " + hitsRight + (exited ? "    (beam left the ring)" : "");
+  text(info, PLOT.left, 86);
 
-  // Source position relative to the mirrors.
-  fill(...defaultColor);
   const srcLine = (behindMirror > 0
     ? "source: " + behindMirror.toFixed(1) + " cm behind " + behindWhich + " mirror"
     : "source: inside the gap")
     + "    .    side offset: " + sideOffset.toFixed(1) + " cm along W (0 = bottom end)";
-  text(srcLine, PLOT.left, 98);
+  text(srcLine, PLOT.left, 104);
 
-  if (showEstimate && beta > 0) {
+  if (showExtras) {
     fill(...dimColor);
-    text("max (full width) W/(D*tan) ~ " + analytic.toFixed(1)
-      + "    drift/bounce = " + driftPerLeg.toFixed(2) + " cm"
-      + "    spot spacing = " + spotSpacing.toFixed(2) + " cm"
-      + "    (actual count depends on where the beam enters along W)", PLOT.left, 116);
+    if (beta > 0) {
+      text("max (full width) W/(D*tan) ~ " + analytic.toFixed(1)
+        + "    drift/bounce = " + (D * Math.tan(beta)).toFixed(2) + " cm"
+        + "    spot spacing = " + spotSpacing.toFixed(2) + " cm", PLOT.left, 122);
+    } else {
+      text("angle 0 -> beam never drifts -> infinite reflections", PLOT.left, 122);
+    }
+    fill(...(overlap ? overlapColor : dimColor));
+    text("beam diameter = " + beamDia.toFixed(2) + " cm  ->  "
+      + (overlap ? "SPOTS OVERLAP (spacing " + spotSpacing.toFixed(2) + " < beam) - raise the angle or shrink the beam"
+                 : "spots clear (spacing > beam)"), PLOT.left, 140);
+    fill(...dimColor);
+    const pathStr = pathCm >= 100 ? (pathCm / 100).toFixed(2) + " m" : pathCm.toFixed(1) + " cm";
+    text("optical path in cavity = " + pathStr + " over " + count + " bounces"
+      + "    .    incidence " + angleDeg.toFixed(3) + " deg from normal", PLOT.left, 158);
+    text(segments + " flat segments -> surface moves up to " + sag.toFixed(2)
+      + " cm as the ring rotates (gap varies up to " + (2 * sag).toFixed(2) + " cm)", PLOT.left, 176);
+    // Spot positions (cm), capped.
+    const fmt = (arr) => arr.slice(0, 6).map((v) => v.toFixed(1)).join(", ") + (arr.length > 6 ? " ...(+" + (arr.length - 6) + ")" : "");
+    fill(...dimColor);
+    if (count > 0) text("spots w (cm)   left: " + fmt(leftWs) + "    right: " + fmt(rightWs), PLOT.left, 194);
   }
 
-  // Hints.
+  // --- hints ---------------------------------------------------------------
   fill(...dimColor);
   textAlign(LEFT, BOTTOM);
-  text("drag handle = move source   |   drag empty = pan   |   wheel = zoom   |   double-click = reset", PLOT.left, PLOT.bottom + 30);
+  text("drag handle = move source (arrows nudge it)   |   drag empty = pan   |   wheel = zoom   |   double-click = reset", PLOT.left, PLOT.bottom + 30);
   text("sliders are fine by default (hold Shift for coarse)" + (fineMode ? "" : "  [COARSE]")
     + "       zoom " + zoom.toFixed(1) + "x", PLOT.left, PLOT.bottom + 46);
   textAlign(LEFT, BASELINE);

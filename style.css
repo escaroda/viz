@@ -38,3 +38,24 @@ main {
 .view-nav:hover {
   opacity: 1;
 }
+
+/* Exact-value number inputs (top view) */
+.num-input {
+  box-sizing: border-box;
+  background: #1f1f24;
+  color: #e2e2e8;
+  border: 1px solid #4a4a52;
+  border-radius: 4px;
+  padding: 3px 7px;
+  margin: 2px;
+  font-family: sans-serif;
+  font-size: 12px;
+  outline: none;
+  transition: border-color .15s;
+}
+.num-input:focus {
+  border-color: #7aa7ff;
+}
+.num-input::-webkit-inner-spin-button {
+  opacity: 0.55;
+}
