@@ -84,6 +84,7 @@ const sliders = {
   "angle":         { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
   "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments",                color: dimColor, format: (v) => v + " (flat mirrors)" },
   "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, unit: " cm",  name: "beam diameter",                color: laserColor },
+  "beam_spread":   { config: [0, 3, 0.15, 0.01],    fine: 0.005, name: "beam spread (mirror imperfection)", color: laserColor, format: (v) => v.toFixed(3) + " mrad/bounce" },
   "falloff":       { config: [0, 0.9, 0.2, 0.01],   fine: 0.005, name: "falloff (dim per reflection)",  color: laserColor, format: (v) => (v * 100).toFixed(0) + "% / bounce" },
   "beam_weight":   { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam line weight",             color: defaultColor },
 };
@@ -346,6 +347,7 @@ function draw() {
   const beta = radians(angleDeg);
   const segments = sliders.segments.instance.value();
   const beamDia = sliders.beam_diameter.instance.value();
+  const beamSpread = sliders.beam_spread.instance.value();
   const beamWeight = sliders.beam_weight.instance.value();
   const falloff = sliders.falloff.instance.value();
   const showSpots = checkboxes.show_spots.instance.checked();
@@ -426,6 +428,39 @@ function draw() {
     traceKey = traceK;
   }
   const { points, count, exited, ray } = traceCache;
+  const nSpots = points.length - 1; // reflection points actually traced (capped cases included)
+
+  // --- beam spread from mirror imperfection --------------------------------
+  // Each imperfect reflection adds an RMS divergence half-angle; random errors
+  // accumulate in quadrature (Theta after k reflections = spread*sqrt(k)). The
+  // physical radius grows by (divergence * leg-length) along each leg.
+  const spreadRad = beamSpread * 0.001; // mrad -> rad
+  const radCm = [beamDia / 2];          // beam radius (cm) at each point
+  {
+    let div = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const legCm = dist(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y) / scale;
+      radCm.push(radCm[i] + div * legCm);
+      div = Math.sqrt(div * div + spreadRad * spreadRad); // reflection at points[i+1] adds spread
+    }
+  }
+  // First reflection where the beam degrades: its footprint overlaps the
+  // same-mirror neighbour, or it spills off the mirror end (w outside [0, W]).
+  const spotSpacing = 2 * D * Math.tan(beta); // cm between consecutive spots on one mirror
+  const spotBad = new Array(points.length).fill(false);
+  let firstBad = 0, badReason = "";
+  for (let i = 1; i <= nSpots; i++) {
+    const w = (originY - points[i].y) / scale;
+    const spill = (w + radCm[i] > W) || (w - radCm[i] < 0);
+    const overlapsNbr = spotSpacing > 0 &&
+      (((i - 2 >= 1) && radCm[i] + radCm[i - 2] >= spotSpacing) ||
+       ((i + 2 <= nSpots) && radCm[i] + radCm[i + 2] >= spotSpacing));
+    if (spill || overlapsNbr) {
+      spotBad[i] = true;
+      if (firstBad === 0) { firstBad = i; badReason = spill ? "beam spills off the mirror" : "spots overlap"; }
+    }
+  }
+  const grownDia = 2 * radCm[nSpots]; // beam diameter (cm) at the last reflection
 
   // Clip cavity/beam drawing to the plot so zoom/pan never spills over the
   // controls, readout, or hints.
@@ -466,14 +501,20 @@ function draw() {
   // --- beam: per-reflection falloff + optional real-width band -------------
   // segAlpha(i) = brightness after i reflections (entry segment i = 0 is full).
   const segAlpha = (i) => 255 * Math.pow(1 - falloff, i);
-  const beamBandW = Math.max(1, beamDia * scale); // real beam width, px (to scale)
   if (count > 0) {
     for (let i = 0; i < points.length - 1; i++) {
       const a = segAlpha(i);
-      if (beamWidthViz) {
-        stroke(...laserColor, a * 0.22);
-        strokeWeight(beamBandW);
-        line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+      if (beamWidthViz) { // tapered band = real, widening beam cross-section
+        const r0 = radCm[i] * scale, r1 = radCm[i + 1] * scale;
+        const dx = points[i + 1].x - points[i].x, dy = points[i + 1].y - points[i].y;
+        const len = Math.hypot(dx, dy) || 1;
+        const px = -dy / len, py = dx / len; // unit perpendicular
+        noStroke();
+        fill(...laserColor, a * 0.22);
+        quad(points[i].x + px * r0, points[i].y + py * r0,
+             points[i + 1].x + px * r1, points[i + 1].y + py * r1,
+             points[i + 1].x - px * r1, points[i + 1].y - py * r1,
+             points[i].x - px * r0, points[i].y - py * r0);
       }
       stroke(...laserColor, a);
       strokeWeight(beamWeight);
@@ -485,15 +526,13 @@ function draw() {
     const last = points[points.length - 1];
     const exitEnd = p5.Vector.add(last, p5.Vector.copy(ray.dir).setMag(plotW + plotH));
     const a = segAlpha(count);
-    if (beamWidthViz) { stroke(...laserColor, a * 0.22); strokeWeight(beamBandW); line(last.x, last.y, exitEnd.x, exitEnd.y); }
+    if (beamWidthViz) { stroke(...laserColor, a * 0.22); strokeWeight(Math.max(1, 2 * radCm[nSpots] * scale)); line(last.x, last.y, exitEnd.x, exitEnd.y); }
     stroke(...laserColor, a * 0.7);
     strokeWeight(beamWeight);
     dashed(last.x, last.y, exitEnd.x, exitEnd.y);
   }
 
-  // --- reflection spots / footprints + overlap detection -------------------
-  const spotSpacing = 2 * D * Math.tan(beta); // cm between consecutive spots on one mirror
-  const overlap = beta > 0 && spotSpacing > 0 && spotSpacing < beamDia;
+  // --- reflection spots / footprints (grow with beam spread) ---------------
   let hitsLeft = 0, hitsRight = 0;
   const leftWs = [], rightWs = [];
   for (let i = 1; i < points.length; i++) {
@@ -502,9 +541,9 @@ function draw() {
     if (onLeft) { hitsLeft++; leftWs.push(wv); } else { hitsRight++; rightWs.push(wv); }
     if (!showSpots) continue;
     const a = segAlpha(i - 1); // brightness of the beam arriving at this spot
-    const c = overlap ? overlapColor : (onLeft ? mirrorColorA : mirrorColorB);
-    if (beamWidthViz) {                       // real-diameter footprint
-      const d = Math.max(2, beamDia * scale);
+    const c = spotBad[i] ? overlapColor : (onLeft ? mirrorColorA : mirrorColorB);
+    if (beamWidthViz) {                       // real (growing) footprint
+      const d = Math.max(2, 2 * radCm[i] * scale);
       noStroke(); fill(...c, a * 0.45); circle(points[i].x, points[i].y, d);
       noFill(); stroke(...c, a); strokeWeight(1); circle(points[i].x, points[i].y, d);
     } else {                                  // simple marker dot
@@ -617,10 +656,11 @@ function draw() {
     } else {
       text("angle 0 -> beam never drifts -> infinite reflections", PLOT.left, 122);
     }
-    fill(...(overlap ? overlapColor : dimColor));
-    text("beam diameter = " + beamDia.toFixed(2) + " cm  ->  "
-      + (overlap ? "SPOTS OVERLAP (spacing " + spotSpacing.toFixed(2) + " < beam) - raise the angle or shrink the beam"
-                 : "spots clear (spacing > beam)"), PLOT.left, 140);
+    fill(...(firstBad > 0 ? overlapColor : dimColor));
+    text("beam " + beamDia.toFixed(2) + " -> " + grownDia.toFixed(2) + " cm by refl " + nSpots
+      + " (spread " + beamSpread.toFixed(2) + " mrad/bounce)  ->  "
+      + (firstBad > 0 ? "clean to ~" + (firstBad - 1) + " refl, then " + badReason
+                      : "all spots clear"), PLOT.left, 140);
     fill(...dimColor);
     const pathStr = pathCm >= 100 ? (pathCm / 100).toFixed(2) + " m" : pathCm.toFixed(1) + " cm";
     text("optical path in cavity = " + pathStr + " over " + count + " bounces"
