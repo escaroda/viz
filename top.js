@@ -99,12 +99,14 @@ let srcScreen = { x: -100, y: -100 };
 let fineMode = true;
 let numInputsY = 0; // y of the exact-value inputs row (set in setup, read by draw)
 let snap = null;    // latest geometry/params published by draw() for PDF export
+let ringPhase = 0;  // current ring rotation (radians), driven by slider or animation
 
 const sliders = {
   "diameter":      { config: [200, 320, 300, 1],   fine: 0.1,  unit: " cm",  name: "ring diameter D (mirror gap)", color: mirrorColorA },
   "width":         { config: [15, 40, 20, 0.5],     fine: 0.05, unit: " cm",  name: "mirror width W",               color: mirrorColorB },
   "angle":         { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
   "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments",                color: dimColor, format: (v) => v + " (flat mirrors)" },
+  "rotation":      { config: [0, 360, 0, 1],         fine: 0.2,  name: "ring rotation",                color: dimColor, format: (v) => v.toFixed(1) + " deg" },
   "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, unit: " cm",  name: "beam diameter",                color: laserColor },
   "beam_spread":   { config: [0, 3, 0, 0.01],       fine: 0.005, name: "beam spread (mirror imperfection)", color: laserColor, format: (v) => v.toFixed(3) + " mrad/bounce" },
   "falloff":       { config: [0, 0.9, 0.2, 0.01],   fine: 0.005, name: "falloff (dim per reflection)",  color: laserColor, format: (v) => (v * 100).toFixed(0) + "% / bounce" },
@@ -116,6 +118,7 @@ const checkboxes = {
   "beam_width":   { config: { isChecked: true },  color: defaultColor, name: "show beam width (to scale)" },
   "show_estimate":{ config: { isChecked: true },  color: defaultColor, name: "show analytic / extras" },
   "show_normals": { config: { isChecked: false }, color: defaultColor, name: "show mirror normals" },
+  "animate_rotation": { config: { isChecked: false }, color: defaultColor, name: "animate ring rotation" },
   "light_theme":  { config: { isChecked: false }, color: defaultColor, name: "light theme" },
 };
 
@@ -629,6 +632,15 @@ function draw() {
   const showExtras = checkboxes.show_estimate.instance.checked();
   const showNormals = checkboxes.show_normals.instance.checked();
 
+  // Ring rotation: animate (9 deg/s, frame-rate independent) or scrub manually.
+  const animateRotation = checkboxes.animate_rotation.instance.checked();
+  if (animateRotation) {
+    ringPhase = (ringPhase + radians(9) * (deltaTime / 1000)) % TWO_PI;
+    sliders.rotation.instance.value(degrees(ringPhase));
+  } else {
+    ringPhase = radians(sliders.rotation.instance.value());
+  }
+
   // Keep the number inputs in sync with the sliders (unless being edited).
   for (const id of NUM_INPUTS) {
     if (document.activeElement !== numInputs[id].elt) numInputs[id].value(sliders[id].instance.value());
@@ -671,9 +683,26 @@ function draw() {
   const yT = originY - pxW;    // top end of the mirrors (w = W)
   const wy = (w) => originY - w * scale;
 
-  // Two finite mirror segments, wound so their normals point INTO the cavity.
-  const mirrorLeft = new Boundary(xL, yB, xL, yT, mirrorColorA);  // normal -> +x (right, inward)
-  const mirrorRight = new Boundary(xR, yT, xR, yB, mirrorColorB); // normal -> -x (left, inward)
+  // Reflecting-surface positions for the current rotation. Each flat segment's
+  // surface sits at distance r/cos(beta) from the ring centre (r = inradius),
+  // beta sweeping +-pi/N as the ring turns -> the surface slides within the
+  // sagitta band (g in [0, sag] on the left, [D - sag, D] on the right). For
+  // even N both sides move together; for odd N they alternate.
+  const segAng = TWO_PI / segments;
+  const inr = (D / 2) * Math.cos(Math.PI / segments);
+  const surf = (az) => {
+    const u = ((((ringPhase + az) / segAng) % 1) + 1) % 1;
+    return inr / Math.cos((u - 0.5) * segAng);
+  };
+  const gL = D / 2 - surf(0);        // left surface, model g
+  const gR = D / 2 + surf(Math.PI);  // right surface, model g
+  const sxL = originX + gL * scale;  // left surface, screen x
+  const sxR = originX + gR * scale;  // right surface, screen x
+
+  // Two finite mirror segments at the rotated surface positions, wound so their
+  // normals point INTO the cavity.
+  const mirrorLeft = new Boundary(sxL, yB, sxL, yT, mirrorColorA);  // normal -> +x (right, inward)
+  const mirrorRight = new Boundary(sxR, yT, sxR, yB, mirrorColorB); // normal -> -x (left, inward)
   const mirrors = [mirrorLeft, mirrorRight];
 
   // Laser source + initial direction.
@@ -696,7 +725,7 @@ function draw() {
   const sagPx = sag * scale;
 
   // --- trace (cached; key includes the view transform) ---------------------
-  const traceK = [D, W, angleDeg, srcG.toFixed(3), srcW.toFixed(3), zoom.toFixed(3), Math.round(panX), Math.round(panY)].join("|");
+  const traceK = [D, W, angleDeg, srcG.toFixed(3), srcW.toFixed(3), zoom.toFixed(3), Math.round(panX), Math.round(panY), segments, ringPhase.toFixed(4)].join("|");
   if (traceK !== traceKey) {
     traceCache = trace(createVector(srcX, srcY), dir, mirrors);
     traceKey = traceK;
@@ -759,7 +788,12 @@ function draw() {
   dashed(xL - 16, yT, xR + 16, yT, [5, 6]);
   dashed(xL - 16, yB, xR + 16, yB, [5, 6]);
 
-  // Mirrors.
+  // Nominal vertex positions (g = 0 and g = D); the solid surface slides inward.
+  stroke(...dimColor, 120); strokeWeight(1);
+  dashed(xL, yT, xL, yB, [3, 4]);
+  dashed(xR, yT, xR, yB, [3, 4]);
+
+  // Mirrors (actual reflecting surfaces at the current rotation).
   strokeWeight(4);
   stroke(...mirrorColorA);
   line(mirrorLeft.a.x, mirrorLeft.a.y, mirrorLeft.b.x, mirrorLeft.b.y);
@@ -810,7 +844,7 @@ function draw() {
   let hitsLeft = 0, hitsRight = 0;
   const leftWs = [], rightWs = [];
   for (let i = 1; i < points.length; i++) {
-    const onLeft = Math.abs(points[i].x - xL) < Math.abs(points[i].x - xR);
+    const onLeft = Math.abs(points[i].x - sxL) < Math.abs(points[i].x - sxR);
     const wv = (originY - points[i].y) / scale;
     if (onLeft) { hitsLeft++; leftWs.push(wv); } else { hitsRight++; rightWs.push(wv); }
     if (!showSpots) continue;
@@ -939,8 +973,9 @@ function draw() {
     const pathStr = pathCm >= 100 ? (pathCm / 100).toFixed(2) + " m" : pathCm.toFixed(1) + " cm";
     text("optical path in cavity = " + pathStr + " over " + count + " bounces"
       + "    .    incidence " + angleDeg.toFixed(3) + " deg from normal", PLOT.left, 158);
-    text(segments + " flat segments -> surface moves up to " + sag.toFixed(2)
-      + " cm as the ring rotates (gap varies up to " + (2 * sag).toFixed(2) + " cm)", PLOT.left, 176);
+    text(segments + " segments -> surface sweeps " + sag.toFixed(2) + " cm; rotation "
+      + degrees(ringPhase).toFixed(1) + " deg -> gap now " + (gR - gL).toFixed(2) + " / " + D + " cm"
+      + (animateRotation ? "   (animating)" : ""), PLOT.left, 176);
     // Spot positions (cm), capped.
     const fmt = (arr) => arr.slice(0, 6).map((v) => v.toFixed(1)).join(", ") + (arr.length > 6 ? " ...(+" + (arr.length - 6) + ")" : "");
     fill(...dimColor);
