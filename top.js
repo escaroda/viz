@@ -28,7 +28,9 @@
 // Wheel zooms, drag empty space pans, double-click resets. Reuses Boundary and
 // Ray from the front-view app.
 
-const SLIDER_SIZE = 180;
+const SLIDER_SIZE = 158; // narrower, since each slider now has an exact-value box beside it
+const INPUT_X = 174;     // x of the exact-value input column
+const NAME_X = 250;      // x of the slider name labels
 const SLIDER_DISTANCE_BETWEEN = 30;
 const SLIDER_TEXT_DISTANCE_BETWEEN = 14;
 const CHECKBOX_DISTANCE_BETWEEN = 24;
@@ -97,20 +99,19 @@ let srcScreen = { x: -100, y: -100 };
 
 // Slider step mode: fine by default (precision); hold Shift for coarse/fast.
 let fineMode = true;
-let numInputsY = 0; // y of the exact-value inputs row (set in setup, read by draw)
 let snap = null;    // latest geometry/params published by draw() for PDF export
 let ringPhase = 0;  // current ring rotation (radians), driven by slider or animation
 
 const sliders = {
-  "diameter":      { config: [200, 320, 300, 1],   fine: 0.1,  unit: " cm",  name: "ring diameter D (mirror gap)", color: mirrorColorA },
-  "width":         { config: [15, 40, 20, 0.5],     fine: 0.05, unit: " cm",  name: "mirror width W",               color: mirrorColorB },
-  "angle":         { config: [0, 3, 1, 0.05],       fine: 0.005, name: "laser angle (from straight-across)", color: laserColor, format: (v) => v.toFixed(3) + " deg" },
-  "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments",                color: dimColor, format: (v) => v + " (flat mirrors)" },
-  "rotation":      { config: [0, 360, 0, 1],         fine: 0.2,  name: "ring rotation",                color: dimColor, format: (v) => v.toFixed(1) + " deg" },
-  "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, unit: " cm",  name: "beam diameter",                color: laserColor },
-  "beam_spread":   { config: [0, 3, 0, 0.01],       fine: 0.005, name: "beam spread (mirror imperfection)", color: laserColor, format: (v) => v.toFixed(3) + " mrad/bounce" },
-  "falloff":       { config: [0, 0.9, 0.2, 0.01],   fine: 0.005, name: "falloff (dim per reflection)",  color: laserColor, format: (v) => (v * 100).toFixed(0) + "% / bounce" },
-  "beam_weight":   { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam line weight",             color: defaultColor },
+  "diameter":      { config: [200, 320, 300, 1],   fine: 0.1,  name: "ring diameter D, cm (mirror gap)", color: mirrorColorA },
+  "width":         { config: [15, 40, 20, 0.5],     fine: 0.05, name: "mirror width W, cm",            color: mirrorColorB },
+  "angle":         { config: [0, 3, 0.35, 0.05],    fine: 0.005, name: "laser angle, deg (0 = straight)", color: laserColor },
+  "segments":      { config: [2, 50, 20, 1],        fine: 1,    name: "ring segments (flat mirrors)",  color: dimColor },
+  "rotation":      { config: [0, 360, 0, 1],         fine: 0.2,  name: "ring rotation, deg",            color: dimColor },
+  "beam_diameter": { config: [0.05, 5, 1.5, 0.05],  fine: 0.01, name: "beam diameter, cm",             color: laserColor },
+  "beam_spread":   { config: [0, 3, 0, 0.01],       fine: 0.005, name: "beam spread, mrad / bounce",    color: laserColor },
+  "falloff":       { config: [0, 90, 20, 1],        fine: 0.5,  name: "falloff, % per reflection",     color: laserColor },
+  "beam_weight":   { config: [0.2, 4, 1.3, 0.1],    fine: 0.05, name: "beam line weight, px",          color: defaultColor },
 };
 
 const checkboxes = {
@@ -122,11 +123,6 @@ const checkboxes = {
   "light_theme":  { config: { isChecked: false }, color: defaultColor, name: "light theme" },
 };
 
-// Exact-value number inputs bound to sliders.
-const NUM_INPUTS = ["diameter", "width", "angle"];
-const NUM_LABELS = { diameter: "D (cm)", width: "W (cm)", angle: "angle" };
-const NUM_X = [12, 92, 172]; // x of each exact-value input
-const numInputs = {};
 
 function setSearchParams(key, value) {
   const sp = new URLSearchParams(window.location.search);
@@ -168,13 +164,33 @@ function setup() {
       const v = Number(params[id]);
       if (!Number.isNaN(v)) slider.config[2] = constrain(v, slider.config[0], slider.config[1]);
     }
+    y += SLIDER_DISTANCE_BETWEEN;
     const instance = createSlider(...slider.config);
-    instance.position(10, y += SLIDER_DISTANCE_BETWEEN);
+    instance.position(10, y);
     instance.size(SLIDER_SIZE);
     instance.class("slider");
     instance.id(id);
     instance.elt.addEventListener("change", onInputChange);
     slider.instance = instance;
+
+    // Exact-value input for this slider, in a column to the right of the sliders.
+    const inp = createInput(String(instance.value()), "number");
+    inp.position(INPUT_X, y - 2);
+    inp.size(68);
+    inp.class("num-input");
+    inp.elt.min = slider.config[0];
+    inp.elt.max = slider.config[1];
+    inp.elt.step = slider.fine;
+    const applyVal = (persist) => {
+      const nv = Number(inp.value());
+      if (Number.isNaN(nv)) return;
+      const c = constrain(nv, slider.config[0], slider.config[1]);
+      instance.value(c);
+      if (persist) setSearchParams(id, c);
+    };
+    inp.elt.addEventListener("input", () => applyVal(false));
+    inp.elt.addEventListener("change", () => applyVal(true));
+    slider.input = inp;
   }
 
   y += 6;
@@ -198,32 +214,9 @@ function setup() {
     applyTheme();
   });
 
-  // Exact-value number inputs (type a precise D / W / angle).
-  numInputsY = y + 50;
-  NUM_INPUTS.forEach((id, i) => {
-    const s = sliders[id];
-    const inp = createInput(String(s.instance.value()), "number");
-    inp.position(NUM_X[i], numInputsY);
-    inp.size(66);
-    inp.class("num-input");
-    inp.elt.min = s.config[0];
-    inp.elt.max = s.config[1];
-    inp.elt.step = s.fine;
-    const apply = (persist) => {
-      const v = Number(inp.value());
-      if (Number.isNaN(v)) return;
-      const c = constrain(v, s.config[0], s.config[1]);
-      s.instance.value(c);
-      if (persist) setSearchParams(id, c);
-    };
-    inp.elt.addEventListener("input", () => apply(false));
-    inp.elt.addEventListener("change", () => apply(true));
-    numInputs[id] = inp;
-  });
-
   // Export-to-PDF button (technical drawing + QR to this exact configuration).
   const exportBtn = createButton("Export PDF");
-  exportBtn.position(NUM_X[0], numInputsY + 34);
+  exportBtn.position(10, y + 32);
   exportBtn.class("export-btn");
   exportBtn.mousePressed(exportPDF);
 
@@ -626,7 +619,7 @@ function draw() {
   const beamDia = sliders.beam_diameter.instance.value();
   const beamSpread = sliders.beam_spread.instance.value();
   const beamWeight = sliders.beam_weight.instance.value();
-  const falloff = sliders.falloff.instance.value();
+  const falloff = sliders.falloff.instance.value() / 100; // slider is %, math wants a fraction
   const showSpots = checkboxes.show_spots.instance.checked();
   const beamWidthViz = checkboxes.beam_width.instance.checked();
   const showExtras = checkboxes.show_estimate.instance.checked();
@@ -641,31 +634,25 @@ function draw() {
     ringPhase = radians(sliders.rotation.instance.value());
   }
 
-  // Keep the number inputs in sync with the sliders (unless being edited).
-  for (const id of NUM_INPUTS) {
-    if (document.activeElement !== numInputs[id].elt) numInputs[id].value(sliders[id].instance.value());
+  // Keep each slider's exact-value input in sync (unless it's being edited).
+  for (const id in sliders) {
+    const inp = sliders[id].input;
+    if (inp && document.activeElement !== inp.elt) inp.value(sliders[id].instance.value());
   }
 
-  // --- control labels ------------------------------------------------------
+  // --- control labels (name only; the value lives in the input column) -----
   noStroke();
   textSize(12); // deterministic: the readout below changes textSize each frame
   for (const id in sliders) {
-    const { color, format, instance, name, unit } = sliders[id];
-    const v = instance.value();
-    const value = format ? format(v) : v + (unit || "");
+    const { color, instance, name } = sliders[id];
     fill(...color);
-    text(name + ": " + value, instance.x * 2 + instance.width, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
+    text(name, NAME_X, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
   }
   for (const id in checkboxes) {
     const { color, instance, name } = checkboxes[id];
     fill(...color);
     text(name, 34, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
   }
-  fill(...dimColor);
-  text("type exact values:", 12, numInputsY - 22);
-  textSize(10);
-  NUM_INPUTS.forEach((id, i) => text(NUM_LABELS[id], NUM_X[i] + 2, numInputsY - 6));
-  textSize(12);
 
   // --- map model units -> screen (uniform scale = auto-fit * zoom, + pan) ----
   const plotW = PLOT.right - PLOT.left;
