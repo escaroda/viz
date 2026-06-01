@@ -59,8 +59,15 @@ let srcG = -15;
 let srcW = -2;
 let dragging = false;
 
+// View transform: scale = auto-fit * zoom, plus a screen-pixel pan offset.
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+let panning = false;
+let panStart = null;
+
 // Updated every frame so the mouse handlers can hit-test / convert coordinates.
-let view = { scale: 1, originX: 0, originY: 0 };
+let view = { scale: 1, autoScale: 1, originX: 0, originY: 0, D: 1, W: 1 };
 let srcScreen = { x: -100, y: -100 };
 
 // Slider step mode: fine by default (precision); hold Shift for coarse/fast.
@@ -218,27 +225,63 @@ function dashed(x1, y1, x2, y2, pattern = [4, 5]) {
   pop();
 }
 
+function overPlot() {
+  return mouseX >= PLOT.left && mouseX <= PLOT.right && mouseY >= PLOT.top && mouseY <= PLOT.bottom;
+}
+
 function mousePressed() {
-  // Assign (not just set true) so a press away from the handle clears any
-  // stale drag state.
-  dragging = dist(mouseX, mouseY, srcScreen.x, srcScreen.y) <= HANDLE_R + 6;
+  // Near the handle -> move the source; otherwise (inside the plot) -> pan.
+  if (dist(mouseX, mouseY, srcScreen.x, srcScreen.y) <= HANDLE_R + 6) {
+    dragging = true; panning = false;
+  } else if (overPlot()) {
+    panning = true; dragging = false;
+    panStart = { x: mouseX, y: mouseY, panX, panY };
+  } else {
+    dragging = false; panning = false;
+  }
 }
 
 function mouseDragged() {
-  if (!dragging) return;
-  const mx = constrain(mouseX, PLOT.left, PLOT.right);
-  const my = constrain(mouseY, PLOT.top, PLOT.bottom);
-  srcG = (mx - view.originX) / view.scale;
-  srcW = (view.originY - my) / view.scale;
+  if (dragging) {
+    const mx = constrain(mouseX, PLOT.left, PLOT.right);
+    const my = constrain(mouseY, PLOT.top, PLOT.bottom);
+    srcG = (mx - view.originX) / view.scale;
+    srcW = (view.originY - my) / view.scale;
+  } else if (panning && panStart) {
+    panX = panStart.panX + (mouseX - panStart.x);
+    panY = panStart.panY + (mouseY - panStart.y);
+  }
+}
+
+// Wheel = zoom, centred on the cursor (the model point under it stays fixed).
+function mouseWheel(event) {
+  if (!overPlot()) return; // let the page scroll normally outside the plot
+  const g = (mouseX - view.originX) / view.scale;
+  const wv = (view.originY - mouseY) / view.scale;
+  zoom = constrain(zoom * (event.delta > 0 ? 0.9 : 1.1), 0.5, 60);
+  const plotW = PLOT.right - PLOT.left, plotH = PLOT.bottom - PLOT.top;
+  const s = view.autoScale * zoom;
+  panX = mouseX - g * s - (PLOT.left + (plotW - view.D * s) / 2);
+  panY = mouseY + wv * s - (PLOT.top + (plotH + view.W * s) / 2);
+  return false; // prevent the page from scrolling
+}
+
+// Double-click empty space to reset zoom/pan.
+function doubleClicked() {
+  if (dist(mouseX, mouseY, srcScreen.x, srcScreen.y) <= HANDLE_R + 6) return;
+  if (!overPlot()) return;
+  zoom = 1; panX = 0; panY = 0;
 }
 
 // Release via a window listener (not p5's mouseReleased) so a mouse-up outside
-// the canvas still ends the drag instead of leaving it stuck.
+// the canvas still ends the drag/pan instead of leaving it stuck.
 function endDrag() {
-  if (!dragging) return;
-  dragging = false;
-  setSearchParams("src_g", srcG.toFixed(2));
-  setSearchParams("src_w", srcW.toFixed(2));
+  if (dragging) {
+    dragging = false;
+    setSearchParams("src_g", srcG.toFixed(2));
+    setSearchParams("src_w", srcW.toFixed(2));
+  }
+  panning = false;
 }
 
 function draw() {
@@ -270,15 +313,16 @@ function draw() {
     text(name, 34, instance.y + SLIDER_TEXT_DISTANCE_BETWEEN);
   }
 
-  // --- map model units -> screen (uniform scale, with a margin for dragging) -
+  // --- map model units -> screen (uniform scale = auto-fit * zoom, + pan) ----
   const plotW = PLOT.right - PLOT.left;
   const plotH = PLOT.bottom - PLOT.top;
-  const scale = Math.min((plotW - 2 * MARGIN) / D, (plotH - 2 * MARGIN) / W);
+  const autoScale = Math.min((plotW - 2 * MARGIN) / D, (plotH - 2 * MARGIN) / W);
+  const scale = autoScale * zoom;
   const pxD = D * scale;
   const pxW = W * scale;
-  const originX = PLOT.left + (plotW - pxD) / 2; // g = 0 (left mirror), screen x
-  const originY = PLOT.top + (plotH + pxW) / 2;   // w = 0 (bottom edge),  screen y
-  view = { scale, originX, originY };
+  const originX = PLOT.left + (plotW - pxD) / 2 + panX; // g = 0 (left mirror), screen x
+  const originY = PLOT.top + (plotH + pxW) / 2 + panY;   // w = 0 (bottom edge),  screen y
+  view = { scale, autoScale, originX, originY, D, W };
   const xL = originX;          // left mirror
   const xR = originX + pxD;    // right mirror
   const yB = originY;          // bottom end of the mirrors (w = 0)
@@ -306,12 +350,21 @@ function draw() {
   const sideOffset = srcW; // 0 = bottom end of the mirror, W = top end
 
   // --- trace (cached) ------------------------------------------------------
-  const traceK = [D, W, angleDeg, srcG.toFixed(3), srcW.toFixed(3)].join("|");
+  // Key includes the view transform (zoom/pan) since the traced points are in
+  // screen coords — otherwise the cached beam would desync from the mirrors.
+  const traceK = [D, W, angleDeg, srcG.toFixed(3), srcW.toFixed(3), zoom.toFixed(3), Math.round(panX), Math.round(panY)].join("|");
   if (traceK !== traceKey) {
     traceCache = trace(createVector(srcX, srcY), dir, mirrors);
     traceKey = traceK;
   }
   const { points, count, exited, ray } = traceCache;
+
+  // Clip cavity/beam drawing to the plot so zoom/pan never spills over the
+  // controls, readout, or hints.
+  drawingContext.save();
+  drawingContext.beginPath();
+  drawingContext.rect(PLOT.left, PLOT.top, plotW, plotH);
+  drawingContext.clip();
 
   // --- draw the cavity -----------------------------------------------------
   // Walk-off ends (top/bottom of the mirror strips): past these the beam leaves.
@@ -403,6 +456,8 @@ function draw() {
   pop();
   textAlign(LEFT, BASELINE);
 
+  drawingContext.restore(); // end plot clip
+
   // --- readout -------------------------------------------------------------
   const driftPerLeg = D * Math.tan(beta);                 // width units per gap-crossing
   const spotSpacing = 2 * driftPerLeg;                    // spacing between spots on one mirror
@@ -452,8 +507,9 @@ function draw() {
   // Hints.
   fill(...dimColor);
   textAlign(LEFT, BOTTOM);
-  text("drag the red handle to move the laser source (it may go behind a mirror)  -  sliders are fine by default, hold Shift for coarse"
-    + (fineMode ? "" : "   [COARSE]"), PLOT.left, PLOT.bottom + 44);
+  text("drag handle = move source   |   drag empty = pan   |   wheel = zoom   |   double-click = reset", PLOT.left, PLOT.bottom + 30);
+  text("sliders are fine by default (hold Shift for coarse)" + (fineMode ? "" : "  [COARSE]")
+    + "       zoom " + zoom.toFixed(1) + "x", PLOT.left, PLOT.bottom + 46);
   textAlign(LEFT, BASELINE);
 
   // fps
